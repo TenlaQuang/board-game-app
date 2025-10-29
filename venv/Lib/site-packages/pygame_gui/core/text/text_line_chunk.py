@@ -1,0 +1,947 @@
+"""
+A bit of renderable text that fits on a single line and all in the same style.
+
+Blocks of text are made up of many text chunks. At the simplest level there would be one per line.
+
+On creation a text chunk calculates how much space it will take up when rendered to a surface and
+stores this size information in a rectangle. These rectangles can then be used in layout
+calculations.
+
+Once a layout for the text chunk is finalised the chunk's render function can be called to add the
+chunk onto it's final destination.
+
+"""
+
+from typing import Optional, Union, Tuple, List
+
+import pygame
+from pygame import Color, Surface, Rect, BLEND_PREMULTIPLIED, BLEND_RGBA_MULT, SRCALPHA
+from pygame.transform import rotozoom, rotate
+
+from pygame_gui.core.interfaces.gui_font_interface import IGUIFontInterface
+from pygame_gui.core.text.text_layout_rect import TextLayoutRect
+from pygame_gui.core.colour_gradient import ColourGradient
+
+
+class TextLineChunkFTFont(TextLayoutRect):
+    """
+    A Text line chunk (text on the same horizontal line in the same style)
+    """
+
+    def __init__(
+        self,
+        text: str,
+        font: IGUIFontInterface,
+        underlined: bool,
+        colour: Color | ColourGradient,
+        using_default_text_colour: bool,
+        bg_colour: Color | ColourGradient,
+        text_shadow_data: Optional[Tuple[int, int, int, Color, bool]] = None,
+        max_dimensions: Optional[List[int]] = None,
+        effect_ids: Optional[List[str]] = None,
+    ):
+        self.text_shadow_data = text_shadow_data
+        self.max_dimensions = max_dimensions
+        text_height, text_rect, text_width = self._handle_dimensions(font, text)
+        super().__init__((text_width, text_height), can_split=True)
+
+        self.text = text
+
+        # style that needs to be matched to merge or insert
+        # chunks (are those basically the same operation?)
+        self.font: IGUIFontInterface = font
+        self.underlined = underlined
+        self.colour = colour
+        self.shadow_colour = Color("#000000")
+        self.using_default_text_colour = using_default_text_colour
+        self.using_default_text_shadow_colour = False
+        self.bg_colour = bg_colour
+
+        if self.text_shadow_data is not None:
+            self.using_default_text_shadow_colour = self.text_shadow_data[4]
+            self.shadow_colour = self.text_shadow_data[3]
+
+        self.y_origin = text_rect.y
+        self.font_y_padding = self._calc_font_padding()
+
+        # we split text strings based on spaces,
+        # these variables need recalculating when splitting or merging chunks
+        self.split_points: List[int] = [
+            pos + 1 for pos, char in enumerate(self.text) if char == " "
+        ]
+        self.letter_count = len(self.text)
+
+        self.target_surface: Optional[Surface] = None
+        self.target_surface_area: Optional[Rect] = None
+        self.row_chunk_origin = 0
+        self.row_chunk_height = text_height
+        self.row_bg_height = 0
+        self.row_line_spacing_height = 0
+        self.layout_x_offset = 0
+
+        self.selection_rect: Optional[Rect] = None
+        self.selected_text: Optional[str] = None
+        self.selection_start_index = 0
+        self.is_selected = (
+            False  # True when the whole chunk is selected - or part of it.
+        )
+        self.is_active = False
+        self.selection_colour = Color(128, 128, 128, 255)
+        self.selection_text_colour = Color(255, 255, 255, 255)
+
+        self.should_centre_from_baseline = False
+
+        self.effect_ids = effect_ids
+
+        # this is the rect before we add it to a row and start moving the origin
+        self.pre_row_rect = Rect(self.topleft, self.size)
+        self.origin_row_y_adjust = 0
+
+        # effects stuff that should be reset
+        self.letter_end: Optional[int] = None
+        self.alpha = 255
+        self.pre_effect_target_surface: Optional[Surface] = None
+
+        self.effects_scale = 1.0
+        self.effects_rotation = 0
+        self.effects_offset_pos = (0, 0)
+        self.transform_effect_rect = Rect(self.topleft, self.size)
+
+    def can_split(self):
+        return super().can_split() if len(self.text) > 0 else False
+
+    def __repr__(self):
+        return f"< '{self.text}' {super().__repr__()} >"
+
+    def __str__(self):
+        return f"< '{self.text}' {super().__str__()} >"
+
+    def _clamp_dimensions_to_maximums(self, text_width, text_height):
+        if (
+            self.max_dimensions is not None
+            and self.max_dimensions[0] != -1
+            and self.max_dimensions[1] != -1
+        ):
+            text_width = min(self.max_dimensions[0], text_width)
+            text_height = min(self.max_dimensions[1], text_height)
+
+        return text_width, text_height
+
+    def _handle_dimensions(self, font, text):
+        if len(text) == 0:
+            text_rect = font.get_rect("A")
+            text_rect.width = 0
+            text_width = 0
+        else:
+            text_rect = font.get_rect(text)
+            text_shadow_width = 0
+            if self.text_shadow_data is not None and self.text_shadow_data[0] != 0:
+                # expand our text chunk if we have a text shadow
+                text_shadow_width = self.text_shadow_data[0]
+            text_width = text_rect.width + (2 * text_shadow_width)
+        text_height = text_rect.height
+        text_width, text_height = self._clamp_dimensions_to_maximums(
+            text_width, text_height
+        )
+        return text_height, text_rect, text_width
+
+    def _calc_font_padding(self):
+        # 'font padding' this determines the amount of padding that
+        # font.pad adds to the top of text excluding
+        # any padding added to make glyphs even - this is useful
+        # for 'base-line centering' when we want to center text
+        # that doesn't drop below the baseline (no y's, g's, p's etc.)
+        # but also don't want it to flicker on and off. Base-line
+        # centering is the default for chunks on a single style row.
+
+        return self.font.get_padding_height()
+
+    def style_match(self, other_text_chunk: "TextLineChunkFTFont"):
+        """
+        Do two layout rectangles have matching styles (generally applies only to actual text).
+        """
+        match_fonts = self.font == other_text_chunk.font
+        match_underlined = self.underlined == other_text_chunk.underlined
+        match_colour = self.colour == other_text_chunk.colour
+        match_bg_color = self.bg_colour == other_text_chunk.bg_colour
+        match_shadow_data = self.text_shadow_data == other_text_chunk.text_shadow_data
+        match_active = self.is_active == other_text_chunk.is_active
+        match_effect_id = self.effect_ids == other_text_chunk.effect_ids
+
+        return (
+            match_fonts
+            and match_underlined
+            and match_colour
+            and match_bg_color
+            and match_shadow_data
+            and match_active
+            and match_effect_id
+        )
+
+    def finalise(
+        self,
+        target_surface: Surface,
+        target_area: Rect,
+        row_chunk_origin: int,
+        row_chunk_height: int,
+        row_bg_height: int,
+        row_line_spacing_height: int,
+        x_scroll_offset: int = 0,
+        letter_end: Optional[int] = None,
+    ):
+        if len(self.text) == 0:
+            return
+
+        final_str_text = self.text if letter_end is None else self.text[:letter_end]
+        # update chunk width for drawing only, need to include the text origin offset
+        # to make the surface wide enough
+        chunk_draw_width = self._text_render_width(final_str_text, self.font)
+        chunk_draw_height = row_chunk_height
+        chunk_x_origin = 0
+        text_shadow_width = 0
+        if self.text_shadow_data is not None and self.text_shadow_data[0] != 0:
+            # expand our text chunk if we have a text shadow
+            text_shadow_width = self.text_shadow_data[0]
+            chunk_x_origin += text_shadow_width
+            chunk_draw_width += text_shadow_width * 2
+            chunk_draw_height += text_shadow_width * 2
+
+        self.font.underline = self.underlined  # set underlined state
+        if self.underlined:
+            self.font.underline_adjustment = 0.5
+
+        surface = self._draw_text(
+            chunk_draw_height,
+            chunk_draw_width,
+            text_shadow_width,
+            chunk_x_origin,
+            final_str_text,
+            row_bg_height,
+            row_chunk_origin,
+        )
+
+        target_surface = self._finalise_horizontal_scroll(
+            target_area, text_shadow_width, x_scroll_offset, target_surface, surface
+        )
+
+        self.height = row_bg_height
+        # In case we need to redraw this chunk, keep hold of the input parameters
+        self.target_surface = target_surface
+        self.target_surface_area = target_area
+        self.row_chunk_origin = row_chunk_origin
+        self.row_chunk_height = row_chunk_height
+        self.row_bg_height = row_bg_height
+        self.row_line_spacing_height = row_line_spacing_height
+        self.layout_x_offset = x_scroll_offset
+        self.letter_end = letter_end
+
+    def _finalise_horizontal_scroll(
+        self, target_area, text_shadow_width, x_scroll_offset, target_surface, surface
+    ):
+        # sort out horizontal scrolling
+        final_pos = (
+            max(target_area.left, self.left - x_scroll_offset),
+            self.top - self.origin_row_y_adjust,
+        )
+        distance_to_lhs_overlap = self.left - target_area.left
+        lhs_overlap = max(0, x_scroll_offset - distance_to_lhs_overlap)
+        remaining_rhs_space = target_area.width - (final_pos[0] - target_area.left)
+        rhs_overlap = max(0, ((self.width - lhs_overlap) - remaining_rhs_space))
+        target_width = (
+            (self.width - lhs_overlap) - rhs_overlap + (2 * text_shadow_width)
+        )
+        final_target = Rect(
+            lhs_overlap,
+            target_area.top,
+            # we only want to grab as much as we can show
+            min(target_width, target_area.width),
+            target_area.height,
+        )
+        if target_width > 0:
+            target_surface.blit(
+                surface, final_pos, area=final_target, special_flags=BLEND_PREMULTIPLIED
+            )
+        return target_surface
+
+    def _handle_bg_selection_and_bg_drawing(self, size) -> pygame.Surface:
+        surface = Surface(size, flags=SRCALPHA, depth=32)
+        if self.selection_rect is not None and (
+            self.selection_rect.width != 0 or self.selection_rect.height != 0
+        ):
+            # we have a selection rect, we may have up to two rects of normal background either side of this
+            before_rect = pygame.Rect(
+                0, 0, self.selection_rect.left, self.selection_rect.height
+            )
+            after_rect = pygame.Rect(
+                self.selection_rect.right,
+                0,
+                surface.get_width(),
+                self.selection_rect.height,
+            )
+            if before_rect.width > 0:
+                if isinstance(self.bg_colour, ColourGradient):
+                    surface.fill(Color("#FFFFFFFF"), before_rect)
+                    self.bg_colour.apply_gradient_to_surface(surface, before_rect)
+                elif isinstance(self.bg_colour, Color):
+                    surface.fill(self.bg_colour, before_rect)
+
+            if isinstance(self.selection_colour, ColourGradient):
+                surface.fill(Color("#FFFFFFFF"), self.selection_rect)
+                self.selection_colour.apply_gradient_to_surface(
+                    surface, self.selection_rect
+                )
+            elif isinstance(self.selection_colour, Color):
+                surface.fill(self.selection_colour, self.selection_rect)
+
+            if after_rect.width > 0:
+                if isinstance(self.bg_colour, ColourGradient):
+                    surface.fill(Color("#FFFFFFFF"), after_rect)
+                    self.bg_colour.apply_gradient_to_surface(surface, after_rect)
+                elif isinstance(self.bg_colour, Color):
+                    surface.fill(self.bg_colour, after_rect)
+
+        else:
+            if isinstance(self.bg_colour, ColourGradient):
+                surface.fill(Color("#FFFFFFFF"))
+                self.bg_colour.apply_gradient_to_surface(surface)
+            else:
+                surface.fill(self.bg_colour)
+
+        return surface
+
+    def _handle_text_selection_and_text_drawing(
+        self,
+        final_str_text,
+        chunk_draw_width,
+        text_shadow_width,
+        chunk_draw_height,
+        chunk_x_origin,
+        row_chunk_origin,
+    ) -> pygame.Surface:
+        text_surface: pygame.Surface = self.font.render_premul_to(
+            final_str_text,
+            Color("#FFFFFFFF"),
+            surf_size=(chunk_draw_width, chunk_draw_height),
+            surf_position=(chunk_x_origin, row_chunk_origin + text_shadow_width),
+        )
+
+        if (
+            self.selection_rect is not None
+            and (self.selection_rect.width != 0 or self.selection_rect.height != 0)
+            and (self.selection_text_colour != self.colour)
+        ):
+            # we have a selection rect, we may have up to two rects of normal background either side of this
+            before_rect = pygame.Rect(
+                0, 0, self.selection_rect.left, self.selection_rect.height
+            )
+            after_rect = pygame.Rect(
+                self.selection_rect.right,
+                0,
+                chunk_draw_width,
+                self.selection_rect.height,
+            )
+            if before_rect.width > 0:
+                if isinstance(self.colour, ColourGradient):
+                    self.colour.apply_gradient_to_surface(text_surface, before_rect)
+                elif isinstance(self.colour, Color):
+                    text_surface.fill(
+                        self.colour, before_rect, special_flags=pygame.BLEND_RGBA_MULT
+                    )
+
+            if isinstance(self.selection_text_colour, ColourGradient):
+                self.selection_text_colour.apply_gradient_to_surface(
+                    text_surface, self.selection_rect
+                )
+            elif isinstance(self.selection_text_colour, Color):
+                text_surface.fill(
+                    self.selection_text_colour,
+                    self.selection_rect,
+                    special_flags=pygame.BLEND_RGBA_MULT,
+                )
+
+            if after_rect.width > 0:
+                if isinstance(self.colour, ColourGradient):
+                    self.colour.apply_gradient_to_surface(text_surface, after_rect)
+                elif isinstance(self.colour, Color):
+                    text_surface.fill(
+                        self.colour, after_rect, special_flags=pygame.BLEND_RGBA_MULT
+                    )
+
+        else:
+            if isinstance(self.colour, ColourGradient):
+                self.colour.apply_gradient_to_surface(text_surface)
+            else:
+                text_surface.fill(self.colour, special_flags=pygame.BLEND_RGBA_MULT)
+
+        return text_surface
+
+    def _draw_text(
+        self,
+        chunk_draw_height,
+        chunk_draw_width,
+        text_shadow_width,
+        chunk_x_origin,
+        final_str_text,
+        row_bg_height,
+        row_chunk_origin,
+    ):
+        text_surface = self._handle_text_selection_and_text_drawing(
+            final_str_text,
+            chunk_draw_width,
+            text_shadow_width,
+            chunk_draw_height,
+            chunk_x_origin,
+            row_chunk_origin,
+        )
+
+        surface = self._handle_bg_selection_and_bg_drawing(
+            (chunk_draw_width, row_bg_height)
+        )
+        # center the text in the line
+        text_rect = text_surface.get_rect()
+        if self.should_centre_from_baseline:
+            no_padding_origin = self.y_origin - self.font_y_padding
+            half_no_padding_origin = int(round(0.5 * no_padding_origin))
+            text_rect.y = (
+                surface.get_rect().centery
+                - self.font_y_padding
+                - half_no_padding_origin
+            )
+        else:
+            text_rect.centery = surface.get_rect().centery
+        # apply any shadow effects
+        self._apply_shadow_effect(
+            surface,
+            text_rect,
+            final_str_text,
+            text_surface,
+            (chunk_x_origin, row_chunk_origin + text_shadow_width),
+        )
+        surface.blit(text_surface, text_rect, special_flags=BLEND_PREMULTIPLIED)
+        return surface
+
+    def _apply_shadow_effect(self, surface, text_rect, text_str, text_surface, origin):
+        if self.text_shadow_data is not None and self.text_shadow_data[0] != 0:
+            shadow_size = self.text_shadow_data[0]
+            shadow_offset = (self.text_shadow_data[1], self.text_shadow_data[2])
+            shadow_colour = self.shadow_colour
+            # we have a shadow
+
+            shadow_surface = self.font.render_premul_to(
+                text_str,
+                shadow_colour,
+                surf_size=text_surface.get_size(),
+                surf_position=origin,
+            )
+
+            for y_pos in range(-shadow_size, shadow_size + 1):
+                shadow_text_rect = Rect(
+                    (
+                        text_rect.x + shadow_offset[0],
+                        text_rect.y + shadow_offset[1] + y_pos,
+                    ),
+                    text_rect.size,
+                )
+
+                surface.blit(
+                    shadow_surface, shadow_text_rect, special_flags=BLEND_PREMULTIPLIED
+                )
+            for x_pos in range(-shadow_size, shadow_size + 1):
+                shadow_text_rect = Rect(
+                    (
+                        text_rect.x + shadow_offset[0] + x_pos,
+                        text_rect.y + shadow_offset[1],
+                    ),
+                    text_rect.size,
+                )
+                surface.blit(
+                    shadow_surface, shadow_text_rect, special_flags=BLEND_PREMULTIPLIED
+                )
+            for x_and_y in range(-shadow_size, shadow_size + 1):
+                shadow_text_rect = Rect(
+                    (
+                        text_rect.x + shadow_offset[0] + x_and_y,
+                        text_rect.y + shadow_offset[1] + x_and_y,
+                    ),
+                    text_rect.size,
+                )
+                surface.blit(
+                    shadow_surface, shadow_text_rect, special_flags=BLEND_PREMULTIPLIED
+                )
+            for x_and_y in range(-shadow_size, shadow_size + 1):
+                shadow_text_rect = Rect(
+                    (
+                        text_rect.x + shadow_offset[0] - x_and_y,
+                        text_rect.y + shadow_offset[1] + x_and_y,
+                    ),
+                    text_rect.size,
+                )
+                surface.blit(
+                    shadow_surface, shadow_text_rect, special_flags=BLEND_PREMULTIPLIED
+                )
+
+    def split(
+        self,
+        requested_x: int,
+        line_width: int,
+        row_start_x: int,
+        allow_split_dashes: bool = True,
+    ) -> Union["TextLayoutRect", None]:
+        """
+        Try to perform a split operation on this chunk at the requested pixel position.
+
+        Often rectangles will be split at the nearest point that is still less than
+        the request (i.e. to the left of the request in the common left-to-right
+        text layout case) .
+
+        :param requested_x: the requested place to split this rectangle along its width.
+        :param line_width: the width of the current line.
+        :param row_start_x: the x start position of the row.
+        :param allow_split_dashes: whether we allow text to be split with dashes either side.
+                                   allowing this makes direct text editing more annoying.
+        """
+        # starting heuristic: find the percentage through the chunk width of this split request
+        percentage_split = 0.0
+        if self.width != 0:
+            percentage_split = float(requested_x) / float(self.width)
+
+        optimum_split_point = self._find_optimum_split_point(
+            percentage_split, requested_x
+        )
+
+        split_text_ok = False
+        left_side = ""
+        right_side = ""
+        if optimum_split_point != 0:
+            # split the text
+            left_side = self.text[:optimum_split_point]
+            right_side = self.text[optimum_split_point:]
+            split_text_ok = True
+
+        elif self.x == row_start_x and self.right > line_width:
+            # we have a chunk with no breaks (one long word usually) longer than a line
+            # split it at the word
+            # optimum_split_point = max(1, int(percentage_split * len(self.text)) - 1)
+            optimum_split_point = max(1, self.x_pos_to_letter_index(requested_x) - 1)
+            if allow_split_dashes:
+                if optimum_split_point == 1:
+                    raise ValueError("Line width is too narrow")
+                    # have to be at least wide enough to fit in a dash and another character
+                # as split dash adds one more character we need to move the split point back by 1
+                optimum_split_point -= 1
+                left_side = f"{self.text[:optimum_split_point]}-"
+                right_side = f"-{self.text[optimum_split_point:]}"
+            else:
+                left_side = self.text[:optimum_split_point]
+                right_side = self.text[optimum_split_point:]
+            split_text_ok = True
+        if split_text_ok:
+            # update the data for this chunk
+            self.text = left_side
+            self.letter_count = len(self.text)
+            self.size = (
+                self._text_render_width(self.text, self.font),  # noqa pylint: disable=attribute-defined-outside-init; pylint getting confused
+                self.height,
+            )
+            self.split_points = [
+                pos + 1 for pos, char in enumerate(self.text) if char == " "
+            ]
+
+            return self._split_at(
+                right_side,
+                self.topright,
+                self.target_surface,
+                self.target_surface_area,
+                self.should_centre_from_baseline,
+            )
+        else:
+            return None
+
+    def _find_optimum_split_point(self, percentage_split, requested_x):
+        # Now we need to search for the perfect split point
+        # perfect split point is a) less than or equal requested x, b) as close to it as possible
+        # because split points will be in order we can test and decided to move left or right until
+        # we find the optimum point.
+        optimum_split_point = 0
+        current_split_point_index = int(
+            percentage_split * len(self.split_points)
+        )  # start with approximate position
+        tested_points: List[int] = []
+        valid_points: List[int] = []
+        found_optimum = False
+        max_split_point_index = len(self.split_points) - 1
+        while not found_optimum and len(self.split_points) > 0:
+            optimum_split_point = self.split_points[current_split_point_index]
+
+            if optimum_split_point in tested_points:
+                # already tested this one, so we must have changed direction after crossing the
+                # requested_x line. the last valid point must be the optimum split point.
+                if not valid_points:
+                    raise RuntimeError(
+                        "Unable to find valid split point for text layout"
+                    )
+                found_optimum = True
+                optimum_split_point = valid_points[-1]
+            else:
+                width, _ = self.font.get_rect(self.text[:optimum_split_point]).size
+                if (
+                    width < requested_x
+                    and current_split_point_index <= max_split_point_index
+                ):
+                    # we are below the required width so we move right
+                    valid_points.append(optimum_split_point)
+                    if current_split_point_index < max_split_point_index:
+                        current_split_point_index += 1
+                elif width > requested_x and current_split_point_index > 0:
+                    current_split_point_index -= 1
+                elif width == requested_x:
+                    # the split point is right on the requested width
+                    found_optimum = True
+                else:
+                    # no valid point
+                    found_optimum = True
+                    optimum_split_point = 0
+                tested_points.append(optimum_split_point)
+        return optimum_split_point
+
+    def split_index(self, index):
+        """
+        Try to perform a split operation on this chunk at the requested character index.
+
+        :param index: the requested index at which to split this rectangle along its width.
+        """
+        if 0 <= index < len(self.text):
+            return self._perform_normal_split(index)
+        elif index == 0 and len(self.text) == 0:
+            # special case
+            return self._split_at(
+                "",
+                self.topright,
+                self.target_surface,
+                self.target_surface_area,
+                self.should_centre_from_baseline,
+            )
+        else:
+            print("index is bad at: ", index, "len(self.text): ", len(self.text))
+            return None
+
+    def _perform_normal_split(self, index):
+        left_side = self.text[:index]
+        right_side = self.text[index:]
+
+        self.text = left_side
+        self.letter_count = len(self.text)
+        self.size = (  # noqa pylint: disable=attribute-defined-outside-init; pylint getting confused
+            self._text_render_width(self.text, self.font),
+            self.height,
+        )
+
+        self.split_points = [
+            pos + 1 for pos, char in enumerate(self.text) if char == " "
+        ]
+
+        return self._split_at(
+            right_side,
+            self.topright,
+            self.target_surface,
+            self.target_surface_area,
+            self.should_centre_from_baseline,
+        )
+
+    def _split_at(
+        self,
+        right_side,
+        split_pos,
+        target_surface,
+        target_surface_area,
+        baseline_centred,
+    ):
+        right_side_chunk = TextLineChunkFTFont(
+            right_side,
+            self.font,
+            self.underlined,
+            self.colour,
+            self.using_default_text_colour,
+            self.bg_colour,
+            self.text_shadow_data,
+        )
+        right_side_chunk.topleft = split_pos  # noqa pylint: disable=attribute-defined-outside-init; pylint getting confused
+        right_side_chunk.target_surface = target_surface
+        right_side_chunk.target_surface_area = target_surface_area
+        right_side_chunk.should_centre_from_baseline = baseline_centred
+        right_side_chunk.effect_ids = self.effect_ids
+        return right_side_chunk
+
+    def clear(self, optional_rect: Optional[Rect] = None):
+        """
+        Clear the finalised/rendered text in this chunk to an invisible/empty surface.
+        """
+        if self.target_surface is not None:
+            clear_rect = optional_rect if optional_rect is not None else self
+            self.target_surface.fill(Color("#00000000"), clear_rect)
+
+    def add_text(self, input_text: str):
+        """
+        Adds text to the end of this text chunk.
+        Theoretically it should be faster to add text on the end of a text layout
+        than sticking it in the middle.
+
+        :param input_text: The text to add.
+        """
+        self.insert_text(input_text, len(self.text))
+
+    def insert_text(self, input_text: str, index: int):
+        """
+        Insert a new string of text into this chunk and update the chunk's data.
+
+        NOTE: We don't redraw the text immediately here as this size of this chunk
+        changing may affect the position of other chunks later in the layout.
+
+        :param input_text: the new text to insert.
+        :param index: the index we are sticking the new text at.
+        """
+        self.text = self.text[:index] + input_text + self.text[index:]
+
+        self._update_chunk_count_splits_and_size()
+
+    def delete_letter_at_index(self, index):
+        """
+        Removes the letter after the supplied character index.
+
+        :param index: the index of the character to 'delete' from.
+        """
+        self.text = self.text[:index] + self.text[min(len(self.text), index + 1) :]
+
+        self._update_chunk_count_splits_and_size()
+
+    def backspace_letter_at_index(self, index):
+        """
+        Removes the letter before the supplied character index.
+
+        :param index: the index of the character to 'backspace' from.
+        """
+        self.text = self.text[: max(0, index - 1)] + self.text[index:]
+
+        self._update_chunk_count_splits_and_size()
+
+    def _update_chunk_size(self):
+        if len(self.text) == 0:
+            text_rect = self.font.get_rect("A")
+        else:
+            text_rect = self.font.get_rect(self.text)
+        text_width = self._text_render_width(self.text, self.font)
+        text_height = text_rect.height
+        text_width, text_height = self._clamp_dimensions_to_maximums(
+            text_width, text_height
+        )
+        self.size = text_width, text_height
+
+    def _update_chunk_count_splits_and_size(self):
+        self.letter_count = len(self.text)
+        # we split text strings based on spaces
+        self.split_points = [
+            pos + 1 for pos, char in enumerate(self.text) if char == " "
+        ]
+        self._update_chunk_size()
+
+    def x_pos_to_letter_index(self, x_pos: int):
+        """
+        Convert a horizontal, or 'x' pixel position into a letter/character index in this
+        text chunk. Commonly used for converting mouse clicks into letter positions for
+        positioning the text editing cursor/carat.
+        """
+
+        chunk_space_x = x_pos - self.x
+        percentage = chunk_space_x / self.width
+        estimated_index = int(round(len(self.text) * percentage))
+        best_index = estimated_index
+        text_rect = self.font.get_rect(self.text[:best_index])
+        width_to_index = text_rect.x + text_rect.width
+        lowest_diff = abs(width_to_index - chunk_space_x)
+
+        check_dir = -1
+        changed_dir = 0
+        step = 1
+        new_index = best_index
+        # algorithm picks a good guess for the best letter
+        # index and then checks either side for better indexes
+        while changed_dir < 2 and new_index != 0:
+            new_index = max(estimated_index + (step * check_dir), 0)
+            curr_text_rect = self.font.get_rect(self.text[:new_index])
+            new_diff = abs((curr_text_rect.x + curr_text_rect.width) - chunk_space_x)
+            if new_diff < lowest_diff:
+                lowest_diff = new_diff
+                best_index = new_index
+                step += 1
+            else:
+                check_dir *= -1
+                changed_dir += 1
+                step = 1
+        return best_index
+
+    def redraw(self):
+        """
+        Redraw a surface that has already been finalised once before.
+        """
+        if self.target_surface is None or self.target_surface_area is None:
+            return
+        if self.pre_effect_target_surface is not None:
+            self.clear(self.transform_effect_rect)
+        else:
+            self.clear()
+        self.finalise(
+            self.target_surface,
+            self.target_surface_area,
+            self.row_chunk_origin,
+            self.row_chunk_height,
+            self.row_bg_height,
+            self.row_line_spacing_height,
+            self.layout_x_offset,
+            self.letter_end,
+        )
+        if self.pre_effect_target_surface is not None:
+            # refresh the pre-target surface
+            self.pre_effect_target_surface = self.target_surface.copy()
+            if self.effects_rotation != 0 or self.effects_offset_pos != (0, 0):
+                self.clear()
+            if self.effects_rotation != 0:
+                self.set_rotation(self.effects_rotation)
+            if self.effects_offset_pos != (0, 0):
+                self.set_offset_pos(self.effects_offset_pos)
+            if self.alpha != 255:
+                self.set_alpha(self.alpha)
+
+    @staticmethod
+    def _text_render_width(text: str, font):
+        return font.get_rect(text).width
+
+    def set_alpha(self, alpha: int):
+        """
+        Set the overall alpha level of this text chunk from 0 to 255.
+        This allows us to fade text in and out of view.
+
+        :param alpha: integer from 0 to 255.
+        """
+        if self.alpha != 255 and alpha == 255:
+            self.alpha = alpha
+            self.redraw()
+        elif (
+            self.pre_effect_target_surface is not None
+            and self.target_surface is not None
+        ):
+            self.alpha = alpha
+            self.target_surface.blit(self.pre_effect_target_surface, self, self)
+            pre_mul_alpha_colour = Color(self.alpha, self.alpha, self.alpha, self.alpha)
+            self.target_surface.fill(
+                pre_mul_alpha_colour, rect=self, special_flags=BLEND_RGBA_MULT
+            )
+
+    def set_offset_pos(self, offset_pos: Tuple[int, int]):
+        """
+        Set an offset that lets us move the text around a bit for effects
+
+        :param offset_pos: integers that offset the x & y position of this text chunk
+        """
+        if self.effects_offset_pos != (0, 0) and offset_pos == (0, 0):
+            # returned to no offset so redraw chunk
+            self.effects_offset_pos = offset_pos
+            self.transform_effect_rect = Rect(self.topleft, self.size)
+            self.redraw()
+        elif (
+            self.pre_effect_target_surface is not None
+            and self.target_surface is not None
+        ):
+            self.effects_offset_pos = offset_pos
+            self.transform_effect_rect = Rect(
+                self.left + self.effects_offset_pos[0],
+                self.top + self.effects_offset_pos[1],
+                self.width,
+                self.height,
+            )
+
+            self.target_surface.blit(
+                self.pre_effect_target_surface, self.transform_effect_rect, self
+            )
+
+    def set_rotation(self, rotation: int):
+        """
+        Set a rotation that lets us move the text around a bit for effects
+
+        :param rotation: a rotation in degrees
+        """
+        if self.effects_rotation != 0 and rotation == 0:
+            # returned to no rotation so redraw chunk
+            self.effects_rotation = rotation
+            self.transform_effect_rect = Rect(self.topleft, self.size)
+            self.redraw()
+        elif self.pre_effect_target_surface is not None:
+            self._perform_rotation(rotation)
+
+    def _perform_rotation(self, rotation):
+        # setup 'background' for effect by clearing any existing effect and redrawing
+        # other chunks
+        if self.pre_effect_target_surface is None or self.target_surface is None:
+            return
+        self.effects_rotation = rotation
+
+        temp_surf = Surface(self.size, flags=SRCALPHA)
+        temp_surf.blit(self.pre_effect_target_surface, (0, 0), self)
+        rotated_surf = rotate(temp_surf, rotation)
+
+        self.transform_effect_rect = Rect(self.topleft, rotated_surf.get_size())
+        self.transform_effect_rect.center = self.center
+
+        self.target_surface.blit(rotated_surf, self.transform_effect_rect)
+
+    def set_scale(self, scale: float):
+        """
+        Set a scale that lets us move the text around a bit for effects
+
+        :param scale: a rotation in degrees
+        """
+        if self.effects_scale != 1.0 and scale == 1.0:
+            # returned to no rotation so redraw chunk
+            self.effects_scale = scale
+            self.transform_effect_rect = Rect(self.topleft, self.size)
+            self.redraw()
+        elif self.pre_effect_target_surface is not None:
+            self._perform_scale(scale)
+
+    def _perform_scale(self, scale):
+        # setup 'background' for effect by clearing any existing effect and redrawing
+        # other chunks
+        if self.pre_effect_target_surface is None or self.target_surface is None:
+            return
+        self.effects_scale = scale
+
+        temp_surf = Surface(self.size, flags=SRCALPHA)
+        temp_surf.blit(self.pre_effect_target_surface, (0, 0), self)
+        scaled_surf = rotozoom(temp_surf, 0, self.effects_scale)
+
+        self.transform_effect_rect = Rect(self.topleft, scaled_surf.get_size())
+        self.transform_effect_rect.center = self.center
+
+        self.target_surface.blit(scaled_surf, self.transform_effect_rect)
+
+    def clear_effects(self):
+        """
+        Clear any effect parameters stored on the text chunk back to default values.
+        """
+        self.clear(self.transform_effect_rect)
+        self.letter_end = None
+        self.alpha = 255
+        self.pre_effect_target_surface = None
+
+        self.effects_scale = 1.0
+        self.effects_rotation = 0
+        self.effects_offset_pos = (0, 0)
+        self.transform_effect_rect = Rect(self.topleft, self.size)
+
+    def grab_pre_effect_surface(self):
+        """
+        Grab the 'pre effect' surface, used to get a 'normal' pre-effect surface to apply effects
+        to.
+
+        """
+        if self.target_surface is not None:
+            self.pre_effect_target_surface = self.target_surface.copy()

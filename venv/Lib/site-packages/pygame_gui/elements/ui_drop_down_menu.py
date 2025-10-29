@@ -1,0 +1,1313 @@
+from typing import Union, List, Tuple, Dict, Optional
+from ast import literal_eval
+
+import pygame
+
+from pygame_gui._constants import UI_BUTTON_PRESSED, UI_SELECTION_LIST_NEW_SELECTION
+from pygame_gui._constants import UI_DROP_DOWN_MENU_CHANGED, OldType
+
+from pygame_gui.core.interfaces import (
+    IContainerLikeInterface,
+    IUIManagerInterface,
+    IUIElementInterface,
+    IColourGradientInterface,
+)
+from pygame_gui.core import UIElement, ObjectID
+from pygame_gui.core.drawable_shapes import RectDrawableShape, RoundedRectangleShape
+from pygame_gui.core.ui_container import UIContainer
+
+from pygame_gui.elements.ui_button import UIButton
+from pygame_gui.elements.ui_selection_list import UISelectionList
+from pygame_gui.core.gui_type_hints import Coordinate, RectLike
+
+
+class UIExpandedDropDownState:
+    """
+    The expanded state of the drop-down  displays the currently chosen option, all the available
+    options and a button to close the menu and return to the closed state.
+
+    Picking an option will also close the menu.
+
+    :param drop_down_menu_ui: The UIDropDownElement this state belongs to.
+    :param options_list: The list of options in this drop down.
+    :param selected_option: The currently selected option.
+    :param base_position_rect: Position and dimensions rectangle.
+    :param close_button_width: Width of close button.
+    :param expand_direction: Direction of expansion, 'up' or 'down'.
+    :param manager: The UI Manager for the whole UI.
+    :param container: The container the element is within.
+    :param object_ids: The object IDs for the drop-down UI element.
+    :param element_ids: The element IDs for the drop-down UI element.
+    """
+
+    def __init__(
+        self,
+        drop_down_menu_ui: "UIDropDownMenu",
+        options_list: List[str | Tuple[str, str]],
+        selected_option: Tuple[str, str],
+        base_position_rect: pygame.Rect,
+        close_button_width: int,
+        expand_direction: Union[str, None],
+        manager: IUIManagerInterface,
+        container: IContainerLikeInterface,
+        object_ids: List[str | None],
+        element_ids: List[str],
+        expand_on_option_click: bool,
+    ) -> None:
+        self.drop_down_menu_ui = drop_down_menu_ui
+        self.options_list: List[str | Tuple[str, str]] = options_list
+        self.selected_option: Tuple[str, str] = selected_option
+        self.base_position_rect = base_position_rect
+
+        self.expand_direction = expand_direction
+        self.ui_manager = manager
+        self.ui_container = container
+        self.element_ids = element_ids
+        self.object_ids = object_ids
+        self.expand_on_option_click = expand_on_option_click
+
+        # sizing variables
+        self.options_list_height: int = 0
+        self.option_list_y_pos: int = 0
+        self.close_button_width: int = close_button_width
+
+        # UI elements
+        self.selected_option_button: Optional[UIButton] = None
+        self.close_button: Optional[UIButton] = None
+        self.options_selection_list: Optional[UISelectionList] = None
+
+        # state transitioning
+        self.should_transition: bool = False
+        self.target_state: str = "closed"
+
+        self.active_buttons: List[UIButton] = []
+
+    def rebuild(self) -> None:
+        """
+        Rebuild the state from theming parameters and dimensions.
+
+        """
+        theming_parameters = {
+            "normal_bg": self.drop_down_menu_ui.background_colour,
+            "normal_border": self.drop_down_menu_ui.border_colour,
+            "border_width": self.drop_down_menu_ui.border_width,
+            "shadow_width": self.drop_down_menu_ui.shadow_width,
+            "shape_corner_radius": self.drop_down_menu_ui.shape_corner_radius,
+            "border_overlap": self.drop_down_menu_ui.border_overlap,
+        }
+
+        shape_rect = pygame.Rect(self.drop_down_menu_ui.relative_rect)
+        if self.drop_down_menu_ui.shape == "rectangle":
+            self.drop_down_menu_ui.drawable_shape = RectDrawableShape(
+                shape_rect, theming_parameters, ["normal"], self.ui_manager
+            )
+
+        elif self.drop_down_menu_ui.shape == "rounded_rectangle":
+            self.drop_down_menu_ui.drawable_shape = RoundedRectangleShape(
+                shape_rect, theming_parameters, ["normal"], self.ui_manager
+            )
+
+        self.drop_down_menu_ui.on_fresh_drawable_shape_ready()
+
+        # extra
+        if self.close_button is not None:
+            expand_button_symbol = "▼"
+            if self.expand_direction is not None:
+                if self.expand_direction == "up":
+                    expand_button_symbol = "▲"
+                elif self.expand_direction == "down":
+                    expand_button_symbol = "▼"
+            self.close_button.set_text(expand_button_symbol)
+
+    def start(self, should_rebuild: bool = True) -> None:
+        """
+        Called each time we enter the expanded state. It creates the necessary elements, the
+        selected option, all the other available options and the close button.
+
+        """
+        self.should_transition = False
+
+        horizontal_border_and_shadow = (
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["left"]
+        )
+        vertical_border_and_shadow = (
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["top"]
+        )
+        self.active_buttons[:] = []
+
+        if self.selected_option[0] == self.selected_option[1]:
+            object_id = ObjectID("#selected_option", "@selected_option")
+        else:
+            object_id = ObjectID(self.selected_option[1], "@selected_option")
+        self.selected_option_button = UIButton(
+            pygame.Rect(
+                (horizontal_border_and_shadow, vertical_border_and_shadow),
+                (
+                    self.base_position_rect.width - self.close_button_width,
+                    self.base_position_rect.height,
+                ),
+            ),
+            self.selected_option[0],
+            self.ui_manager,
+            self.ui_container,
+            starting_height=2,
+            parent_element=self.drop_down_menu_ui,
+            object_id=object_id,
+        )
+        self.drop_down_menu_ui.join_focus_sets(self.selected_option_button)
+        self.active_buttons.append(self.selected_option_button)
+
+        list_object_id = "#drop_down_options_list"
+        list_object_ids = self.drop_down_menu_ui.object_ids[:]
+        list_object_ids.append(list_object_id)
+        list_class_ids = self.drop_down_menu_ui.class_ids[:]
+        list_class_ids.append(None)
+        list_element_ids = self.drop_down_menu_ui.element_ids[:]
+        list_element_ids.append("selection_list")
+        list_base_element_ids = self.drop_down_menu_ui.element_base_ids[:]
+        list_base_element_ids.append(None)
+
+        final_ids = self.ui_manager.get_theme().build_all_combined_ids(
+            list_base_element_ids, list_element_ids, list_class_ids, list_object_ids
+        )
+
+        self._calculate_options_list_sizes(final_ids)
+        expand_button_symbol = self._setup_expansion_params_based_on_direction()
+
+        if self.close_button_width > 0:
+            close_button_x = (
+                horizontal_border_and_shadow
+                + self.base_position_rect.width
+                - self.close_button_width
+            )
+
+            self.close_button = UIButton(
+                pygame.Rect(
+                    (close_button_x, horizontal_border_and_shadow),
+                    (self.close_button_width, self.base_position_rect.height),
+                ),
+                expand_button_symbol,
+                self.ui_manager,
+                self.ui_container,
+                starting_height=2,
+                parent_element=self.drop_down_menu_ui,
+                object_id="#expand_button",
+            )
+            self.drop_down_menu_ui.join_focus_sets(self.close_button)
+            self.active_buttons.append(self.close_button)
+        list_rect = pygame.Rect(
+            self.drop_down_menu_ui.relative_rect.left,
+            self.option_list_y_pos,
+            (self.drop_down_menu_ui.relative_rect.width - self.close_button_width),
+            self.options_list_height,
+        )
+        self.options_selection_list = UISelectionList(
+            list_rect,
+            starting_height=3,
+            item_list=self.options_list,
+            allow_double_clicks=False,
+            manager=self.ui_manager,
+            parent_element=self.drop_down_menu_ui,
+            container=self.drop_down_menu_ui.ui_container,
+            anchors=self.drop_down_menu_ui.anchors,
+            object_id="#drop_down_options_list",
+            default_selection=self.selected_option,
+        )
+        self.drop_down_menu_ui.join_focus_sets(self.options_selection_list)
+        if self.options_selection_list.scroll_bar is not None:
+            # our options list is long enough to have a scroll bar.
+            # we want to scroll it enough that the currently selected option is on screen.
+            start_percentage = (
+                self.options_selection_list.get_single_selection_start_percentage()
+            )
+            self.options_selection_list.scroll_bar.set_scroll_from_start_percentage(
+                start_percentage
+            )
+            self.options_selection_list.update(0.0)
+
+        if should_rebuild:
+            self.rebuild()
+
+    def _setup_expansion_params_based_on_direction(self):
+        expand_button_symbol = "▼"
+        if self.expand_direction is not None:
+            if self.expand_direction == "up":
+                expand_button_symbol = "▲"
+
+                if self.drop_down_menu_ui.expansion_height_limit is None:
+                    self.drop_down_menu_ui.expansion_height_limit = (
+                        self.base_position_rect.top
+                    )
+
+                self.options_list_height = min(
+                    self.options_list_height,
+                    self.drop_down_menu_ui.expansion_height_limit,
+                )
+
+                self.option_list_y_pos = (
+                    self.base_position_rect.top - self.options_list_height
+                )
+
+            elif self.expand_direction == "down":
+                expand_button_symbol = "▼"
+
+                if (
+                    self.drop_down_menu_ui.expansion_height_limit is None
+                    and self.drop_down_menu_ui.ui_container is not None
+                ):
+                    height_limit = int(
+                        self.drop_down_menu_ui.ui_container.get_container()
+                        .get_relative_rect()
+                        .height
+                        - self.base_position_rect.bottom
+                    )
+                    self.drop_down_menu_ui.expansion_height_limit = height_limit
+
+                if self.drop_down_menu_ui.expansion_height_limit is not None:
+                    self.options_list_height = min(
+                        self.options_list_height,
+                        self.drop_down_menu_ui.expansion_height_limit,
+                    )
+
+                self.option_list_y_pos = self.base_position_rect.bottom
+        return expand_button_symbol
+
+    def _calculate_options_list_sizes(self, final_ids):
+        try:
+            list_shadow_width = 2
+            shadow_width_str = self.ui_manager.get_theme().get_misc_data(
+                "shadow_width", final_ids
+            )
+            if isinstance(shadow_width_str, str):
+                list_shadow_width = int(shadow_width_str)
+        except (LookupError, ValueError):
+            list_shadow_width = 2
+        try:
+            list_border_width = {"left": 2, "right": 2, "top": 2, "bottom": 2}
+            border_width_str = self.ui_manager.get_theme().get_misc_data(
+                "border_width", final_ids
+            )
+            if isinstance(border_width_str, str):
+                border_width_dict = literal_eval(border_width_str)
+                list_border_width = border_width_dict
+            elif isinstance(border_width_str, dict):
+                list_border_width = border_width_str
+        except (LookupError, ValueError):
+            list_border_width = {"left": 2, "right": 2, "top": 2, "bottom": 2}
+        try:
+            list_item_height = 20
+            item_height_str = self.ui_manager.get_theme().get_misc_data(
+                "list_item_height", final_ids
+            )
+            if isinstance(item_height_str, str):
+                list_item_height = int(item_height_str)
+        except (LookupError, ValueError):
+            list_item_height = 20
+        self.options_list_height = (
+            (list_item_height * len(self.options_list))
+            + (2 * list_shadow_width)
+            + list_border_width["top"]
+            + list_border_width["bottom"]
+        )
+        self.option_list_y_pos = 0
+
+    def finish(self) -> None:
+        """
+        cleans everything up upon exiting the expanded menu state.
+        """
+        if self.options_selection_list is not None:
+            self.options_selection_list.kill()
+        if self.selected_option_button is not None:
+            self.selected_option_button.kill()
+        if self.close_button is not None:
+            self.close_button.kill()
+
+    def process_event(self, event: pygame.event.Event) -> bool:
+        """
+        Processes events for the closed state of the drop-down.
+
+        :param event: The event to process.
+
+        :return: Return True if we want to consume this event, so it is not passed on to the
+                 rest of the UI.
+
+        """
+        if event.type == UI_BUTTON_PRESSED and (
+            (self.expand_on_option_click and event.ui_element in self.active_buttons)
+            or (
+                not self.expand_on_option_click
+                and self.close_button is not None
+                and event.ui_element == self.close_button
+            )
+        ):
+            self.should_transition = True
+            return True
+
+        if (
+            event.type == UI_SELECTION_LIST_NEW_SELECTION
+            and event.ui_element == self.options_selection_list
+        ):
+            self._on_new_item_selected()
+        return False  # don't consume any events
+
+    def _on_new_item_selected(self):
+        if self.options_selection_list is None:
+            return
+
+        selection = self.options_selection_list.get_single_selection(
+            include_object_id=True
+        )
+        if isinstance(selection, tuple):
+            self.drop_down_menu_ui.selected_option = selection
+        self.should_transition = True
+
+        # old event - to be removed in 0.8.0
+        event_data = {
+            "user_type": OldType(UI_DROP_DOWN_MENU_CHANGED),
+            "text": self.drop_down_menu_ui.selected_option[0],
+            "ui_element": self.drop_down_menu_ui,
+            "ui_object_id": self.drop_down_menu_ui.most_specific_combined_id,
+        }
+        pygame.event.post(pygame.event.Event(pygame.USEREVENT, event_data))
+
+        # new event
+        event_data = {
+            "text": self.drop_down_menu_ui.selected_option[0],
+            "selected_option_id": self.drop_down_menu_ui.selected_option[1],
+            "ui_element": self.drop_down_menu_ui,
+            "ui_object_id": self.drop_down_menu_ui.most_specific_combined_id,
+        }
+        pygame.event.post(pygame.event.Event(UI_DROP_DOWN_MENU_CHANGED, event_data))
+
+    def update_position(self) -> None:
+        """
+        Update the position of all the button elements in the open drop-down state.
+
+        Used when the position of the  drop-down has been altered directly, rather than when it
+        has been moved as a consequence of its container being moved.
+        """
+
+        # update the base position rect
+        horizontal_border_and_shadow = int(
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["left"]
+        )
+        vertical_border_and_shadow = int(
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["top"]
+        )
+        self.base_position_rect.x = int(
+            self.drop_down_menu_ui.relative_rect.x + horizontal_border_and_shadow
+        )
+        self.base_position_rect.y = int(
+            self.drop_down_menu_ui.relative_rect.y + vertical_border_and_shadow
+        )
+
+        # update all the ui elements that depend on the base position
+        if self.selected_option_button is not None:
+            self.selected_option_button.set_relative_position(
+                (horizontal_border_and_shadow, vertical_border_and_shadow)
+            )
+        list_post = (self.drop_down_menu_ui.relative_rect.left, self.option_list_y_pos)
+        if self.options_selection_list is not None:
+            self.options_selection_list.set_relative_position(list_post)
+
+        if self.close_button is not None:
+            close_button_x = (
+                horizontal_border_and_shadow
+                + self.base_position_rect.width
+                - self.close_button_width
+            )
+            self.close_button.set_relative_position(
+                (close_button_x, horizontal_border_and_shadow)
+            )
+
+    def update_dimensions(self) -> None:
+        """
+        Update the dimensions of all the button elements in the closed drop-down state.
+
+        Used when the dimensions of the drop-down have been altered.
+        """
+
+        # update the base position rect
+        horizontal_border_and_shadow = int(
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["left"]
+        )
+        total_horiz_borders = int(
+            (2 * self.drop_down_menu_ui.shadow_width)
+            + self.drop_down_menu_ui.border_width["left"]
+            + self.drop_down_menu_ui.border_width["right"]
+        )
+        total_vert_borders = int(
+            (2 * self.drop_down_menu_ui.shadow_width)
+            + self.drop_down_menu_ui.border_width["top"]
+            + self.drop_down_menu_ui.border_width["bottom"]
+        )
+        self.base_position_rect.width = int(
+            self.drop_down_menu_ui.relative_rect.width - total_horiz_borders
+        )
+        self.base_position_rect.height = int(
+            self.drop_down_menu_ui.relative_rect.height - total_vert_borders
+        )
+
+        if (
+            self.expand_direction is not None
+            and self.drop_down_menu_ui.expansion_height_limit is not None
+        ):
+            if self.expand_direction == "up":
+                self.options_list_height = min(
+                    self.options_list_height,
+                    self.drop_down_menu_ui.expansion_height_limit,
+                )
+                self.option_list_y_pos = (
+                    self.base_position_rect.top - self.options_list_height
+                )
+
+            elif self.expand_direction == "down":
+                self.options_list_height = min(
+                    self.options_list_height,
+                    self.drop_down_menu_ui.expansion_height_limit,
+                )
+                self.option_list_y_pos = self.base_position_rect.bottom
+
+        # update all the ui elements that depend on the base position rect
+        if self.selected_option_button is not None:
+            self.selected_option_button.set_dimensions(
+                (
+                    self.base_position_rect.width - self.close_button_width,
+                    self.base_position_rect.height,
+                )
+            )
+
+        if self.options_selection_list is not None:
+            self.options_selection_list.set_dimensions(
+                (
+                    (
+                        self.drop_down_menu_ui.relative_rect.width
+                        - self.close_button_width
+                    ),
+                    self.options_list_height,
+                )
+            )
+
+        list_pos = (self.drop_down_menu_ui.relative_rect.left, self.option_list_y_pos)
+        if self.options_selection_list is not None:
+            self.options_selection_list.set_relative_position(list_pos)
+        if self.close_button is not None:
+            close_button_x = (
+                horizontal_border_and_shadow
+                + self.base_position_rect.width
+                - self.close_button_width
+            )
+            self.close_button.set_dimensions(
+                (self.close_button_width, self.base_position_rect.height)
+            )
+            self.close_button.set_relative_position(
+                (close_button_x, horizontal_border_and_shadow)
+            )
+
+    def hide(self) -> None:
+        """
+        Transition from expanded state to closed state.
+        """
+        self.should_transition = True
+
+
+class UIClosedDropDownState:
+    """
+    The closed state of the drop-down just displays the currently chosen option and a button that
+    will switch the menu to the expanded state.
+
+    :param drop_down_menu_ui: The UIDropDownElement this state belongs to.
+    :param selected_option: The currently selected option.
+    :param base_position_rect: Position and dimensions rectangle.
+    :param open_button_width: Width of open button.
+    :param expand_direction: Direction of expansion, 'up' or 'down'.
+    :param manager: The UI Manager for the whole UI.
+    :param container: The container the element is within.
+    :param object_ids: The object IDs for the drop-down UI element.
+    :param element_ids: The element IDs for the drop-down UI element.
+    :param visible: Whether the element is visible by default. Warning -
+                    container visibility may override this.
+    """
+
+    def __init__(
+        self,
+        drop_down_menu_ui: "UIDropDownMenu",
+        selected_option: Tuple[str, str],
+        base_position_rect: pygame.Rect,
+        open_button_width: int,
+        expand_direction: str | None,
+        manager: IUIManagerInterface,
+        container: IContainerLikeInterface,
+        object_ids: List[str | None],
+        element_ids: List[str],
+        visible: int = 1,
+        expand_on_option_click: bool = True,
+    ) -> None:
+        self.drop_down_menu_ui = drop_down_menu_ui
+        self.selected_option: Tuple[str, str] = selected_option
+        self.base_position_rect = base_position_rect
+        self.expand_direction = expand_direction
+        self.ui_manager = manager
+        self.ui_container = container
+        self.element_ids = element_ids
+        self.object_ids = object_ids
+        self.expand_on_option_click = expand_on_option_click
+        self.visible = visible
+
+        self.open_button_width: int = open_button_width
+
+        self.selected_option_button: Optional[UIButton] = None
+        self.open_button: Optional[UIButton] = None
+
+        self.should_transition: bool = False
+        self.target_state: str = "expanded"
+
+        self.active_buttons: List[UIButton] = []
+
+    def disable(self) -> None:
+        """
+        Disables all the buttons in the closed state menu.
+        """
+        if self.selected_option_button is not None:
+            self.selected_option_button.disable()
+        if self.open_button is not None:
+            self.open_button.disable()
+        if self.drop_down_menu_ui.drawable_shape is not None:
+            self.drop_down_menu_ui.drawable_shape.set_active_state("disabled")
+
+    def enable(self) -> None:
+        """
+        Enables all the buttons in the closed state menu.
+        """
+        if self.selected_option_button is not None:
+            self.selected_option_button.enable()
+        if self.open_button is not None:
+            self.open_button.enable()
+        if self.drop_down_menu_ui.drawable_shape is not None:
+            self.drop_down_menu_ui.drawable_shape.set_active_state("normal")
+
+    def rebuild(self) -> None:
+        """
+        Rebuild the closed state from theming parameters and dimensions.
+
+        """
+        theming_parameters = {
+            "normal_bg": self.drop_down_menu_ui.background_colour,
+            "normal_border": self.drop_down_menu_ui.border_colour,
+            "disabled_bg": self.drop_down_menu_ui.disabled_background_colour,
+            "disabled_border": self.drop_down_menu_ui.disabled_border_colour,
+            "border_width": self.drop_down_menu_ui.border_width,
+            "shadow_width": self.drop_down_menu_ui.shadow_width,
+            "shape_corner_radius": self.drop_down_menu_ui.shape_corner_radius,
+            "border_overlap": self.drop_down_menu_ui.border_overlap,
+        }
+
+        if self.drop_down_menu_ui.shape == "rectangle":
+            self.drop_down_menu_ui.drawable_shape = RectDrawableShape(
+                self.drop_down_menu_ui.rect,
+                theming_parameters,
+                ["normal", "disabled"],
+                self.ui_manager,
+            )
+        elif self.drop_down_menu_ui.shape == "rounded_rectangle":
+            shape_rect = self.drop_down_menu_ui.rect
+            self.drop_down_menu_ui.drawable_shape = RoundedRectangleShape(
+                shape_rect, theming_parameters, ["normal", "disabled"], self.ui_manager
+            )
+
+        self.drop_down_menu_ui.sub_state_refresh_image()
+
+        # extra
+        if self.open_button is not None:
+            expand_button_symbol = "▼"
+            if self.expand_direction is not None:
+                if self.expand_direction == "up":
+                    expand_button_symbol = "▲"
+                elif self.expand_direction == "down":
+                    expand_button_symbol = "▼"
+            self.open_button.set_text(expand_button_symbol)
+
+    def start(self, should_rebuild: bool = True) -> None:
+        """
+        Called each time we enter the closed state. Creates the necessary elements.
+        """
+        if should_rebuild:
+            self.rebuild()
+
+        self.should_transition = False
+
+        horizontal_border_and_shadow = (
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["left"]
+        )
+        vertical_border_and_shadow = (
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["top"]
+        )
+        self.active_buttons = []
+        if self.selected_option[0] == self.selected_option[1]:
+            object_id = ObjectID("#selected_option", "@selected_option")
+        else:
+            object_id = ObjectID(self.selected_option[1], "@selected_option")
+        self.selected_option_button = UIButton(
+            pygame.Rect(
+                (horizontal_border_and_shadow, vertical_border_and_shadow),
+                (
+                    self.base_position_rect.width - self.open_button_width,
+                    self.base_position_rect.height,
+                ),
+            ),
+            self.selected_option[0],
+            self.ui_manager,
+            self.ui_container,
+            starting_height=2,
+            parent_element=self.drop_down_menu_ui,
+            object_id=object_id,
+            visible=self.visible,
+        )
+        self.drop_down_menu_ui.join_focus_sets(self.selected_option_button)
+        self.active_buttons.append(self.selected_option_button)
+
+        if self.open_button_width > 0:
+            self._setup_open_arrow_button(horizontal_border_and_shadow)
+
+    def _setup_open_arrow_button(self, horizontal_border_and_shadow):
+        open_button_x = (
+            horizontal_border_and_shadow
+            + self.base_position_rect.width
+            - self.open_button_width
+        )
+        expand_button_symbol = "▼"
+        if self.expand_direction is not None:
+            if self.expand_direction == "down":
+                expand_button_symbol = "▼"
+            elif self.expand_direction == "up":
+                expand_button_symbol = "▲"
+        self.open_button = UIButton(
+            pygame.Rect(
+                (open_button_x, horizontal_border_and_shadow),
+                (self.open_button_width, self.base_position_rect.height),
+            ),
+            expand_button_symbol,
+            self.ui_manager,
+            self.ui_container,
+            starting_height=2,
+            parent_element=self.drop_down_menu_ui,
+            object_id="#expand_button",
+            visible=self.visible,
+        )
+        self.drop_down_menu_ui.join_focus_sets(self.open_button)
+        self.active_buttons.append(self.open_button)
+
+    def finish(self) -> None:
+        """
+        Called when we are done with this state, kills all the UI elements.
+        """
+        if self.selected_option_button is not None:
+            self.selected_option_button.kill()
+        if self.open_button is not None:
+            self.open_button.kill()
+
+    def process_event(self, event: pygame.event.Event) -> bool:
+        """
+        Handles events that this state is interested in. In this case we are watching for
+        clicks on the open button and the selected option button.
+
+        :param event: The event to process.
+
+        :return: Return True if we want to consume this event so it is not passed on to the
+                rest of the UI.
+        """
+        if event.type == UI_BUTTON_PRESSED and (
+            (self.expand_on_option_click and event.ui_element in self.active_buttons)
+            or (
+                not self.expand_on_option_click
+                and self.open_button is not None
+                and event.ui_element == self.open_button
+            )
+        ):
+            self.should_transition = True
+            return True
+
+        return False
+
+    def update_position(self) -> None:
+        """
+        Updates the position of the menu based on the position of the parent element.
+        """
+
+        # update the base position rect
+        horizontal_border_and_shadow = int(
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["left"]
+        )
+        vertical_border_and_shadow = int(
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["top"]
+        )
+        self.base_position_rect.x = int(
+            self.drop_down_menu_ui.relative_rect.x + horizontal_border_and_shadow
+        )
+        self.base_position_rect.y = int(
+            self.drop_down_menu_ui.relative_rect.y + vertical_border_and_shadow
+        )
+
+        # update all the ui elements that depend on the base position
+        if self.selected_option_button is not None:
+            self.selected_option_button.set_relative_position(
+                (horizontal_border_and_shadow, vertical_border_and_shadow)
+            )
+
+        if self.open_button is not None:
+            open_button_x = (
+                horizontal_border_and_shadow
+                + self.base_position_rect.width
+                - self.open_button_width
+            )
+            self.open_button.set_relative_position(
+                (open_button_x, horizontal_border_and_shadow)
+            )
+
+    def update_dimensions(self) -> None:
+        """
+        Updates the dimensions of the menu based on the dimensions of the parent element.
+        """
+
+        # update the base position rect
+        horizontal_border_and_shadow = int(
+            self.drop_down_menu_ui.shadow_width
+            + self.drop_down_menu_ui.border_width["left"]
+        )
+        total_horiz_borders = int(
+            (2 * self.drop_down_menu_ui.shadow_width)
+            + self.drop_down_menu_ui.border_width["left"]
+            + self.drop_down_menu_ui.border_width["right"]
+        )
+        total_vert_borders = int(
+            (2 * self.drop_down_menu_ui.shadow_width)
+            + self.drop_down_menu_ui.border_width["top"]
+            + self.drop_down_menu_ui.border_width["bottom"]
+        )
+        self.base_position_rect.width = int(
+            self.drop_down_menu_ui.relative_rect.width - total_horiz_borders
+        )
+        self.base_position_rect.height = int(
+            self.drop_down_menu_ui.relative_rect.height - total_vert_borders
+        )
+
+        # update all the ui elements that depend on the base position rect
+        if self.selected_option_button is not None:
+            self.selected_option_button.set_dimensions(
+                (
+                    self.base_position_rect.width - self.open_button_width,
+                    self.base_position_rect.height,
+                )
+            )
+        if self.open_button is not None:
+            open_button_x = (
+                horizontal_border_and_shadow
+                + self.base_position_rect.width
+                - self.open_button_width
+            )
+            self.open_button.set_dimensions(
+                (self.open_button_width, self.base_position_rect.height)
+            )
+            self.open_button.set_relative_position(
+                (open_button_x, horizontal_border_and_shadow)
+            )
+
+    def show(self) -> None:
+        """
+        Shows the closed drop down state.
+        """
+        self.visible = True
+
+        if self.open_button is not None:
+            self.open_button.show()
+        if self.selected_option_button is not None:
+            self.selected_option_button.show()
+
+    def hide(self) -> None:
+        """
+        Hides the closed drop down state.
+        """
+        if not self.visible:
+            return
+
+        self.visible = False
+
+        if self.open_button is not None:
+            self.open_button.hide()
+        if self.selected_option_button is not None:
+            self.selected_option_button.hide()
+
+
+class UIDropDownMenu(UIContainer):
+    """
+    A drop-down menu lets us choose one text option from a list. That list of options can be
+    expanded and hidden at the press of a button. While the element is called a drop-down,
+    it can also be made to 'climb up' by changing the 'expand_direction' styling option to 'up'
+    in the theme file.
+
+    The drop-down is implemented through two states, one representing the 'closed' menu state
+    and one for when it has been 'expanded'.
+
+    :param options_list: The list of options to choose from. They must be strings.
+    :param starting_option: The starting option, selected when the menu is first created.
+    :param relative_rect: The size and position of the element when not expanded.
+    :param manager: The UIManager that manages this element. If not provided or set to None,
+                    it will try to use the first UIManager that was created by your application.
+    :param container: The container that this element is within. If set to None will be the root
+                      window's container.
+    :param parent_element: The element this element 'belongs to' in the theming hierarchy.
+    :param object_id: A custom defined ID for fine-tuning of theming.
+    :param expansion_height_limit: Limit on the height that this will expand to, defaults to the
+                                   container bounds.
+    :param anchors: A dictionary describing what this element's relative_rect is relative to.
+    :param visible: Whether the element is visible by default. Warning - container visibility
+                    may override this.
+    :param expand_on_option_click: If this is set to False the drop-down will only expand when
+                                   the open/close button is pressed and not when the selected
+                                   option is pressed.
+    """
+
+    def __init__(
+        self,
+        options_list: List[str | Tuple[str, str]],
+        starting_option: Union[str, Tuple[str, str]],
+        relative_rect: RectLike,
+        manager: Optional[IUIManagerInterface] = None,
+        container: Optional[IContainerLikeInterface] = None,
+        parent_element: Optional[UIElement] = None,
+        object_id: Union[ObjectID, str, None] = None,
+        expansion_height_limit: Union[int, None] = None,
+        anchors: Optional[Dict[str, Union[str, IUIElementInterface]]] = None,
+        visible: int = 1,
+        *,
+        expand_on_option_click: bool = True,
+    ) -> None:
+        # Need to move some declarations early as they are indirectly referenced via the ui element
+        # constructor
+        self.menu_states: Dict[
+            str, UIExpandedDropDownState | UIClosedDropDownState
+        ] = {}
+        self.current_state: Optional[
+            UIExpandedDropDownState | UIClosedDropDownState
+        ] = None
+        super().__init__(
+            relative_rect,
+            manager,
+            container=container,
+            starting_height=0,
+            anchors=anchors,
+            visible=visible,
+            parent_element=parent_element,
+            object_id=object_id,
+            element_id=["drop_down_menu"],
+        )
+
+        self.__layer_thickness_including_expansion = 4
+        self.options_list: List[str | Tuple[str, str]] = []
+        for option in options_list:
+            if isinstance(option, str):
+                self.options_list.append((option, option))
+            else:
+                self.options_list.append(option)
+        if isinstance(starting_option, str):
+            self.selected_option = (starting_option, starting_option)
+        else:
+            self.selected_option = starting_option
+        self.open_button_width = 20
+
+        self.expansion_height_limit = expansion_height_limit
+        self.expand_on_option_click = expand_on_option_click
+
+        self.background_colour: pygame.Color | IColourGradientInterface = pygame.Color(
+            0, 0, 0, 0
+        )
+        self.border_colour: pygame.Color | IColourGradientInterface = pygame.Color(
+            0, 0, 0, 0
+        )
+        self.disabled_background_colour: pygame.Color | IColourGradientInterface = (
+            pygame.Color(0, 0, 0, 0)
+        )
+        self.disabled_border_colour: pygame.Color | IColourGradientInterface = (
+            pygame.Color(0, 0, 0, 0)
+        )
+
+        self.shape = "rectangle"
+        self.shape_corner_radius = [2, 2, 2, 2]
+
+        self.background_rect = pygame.Rect(0, 0, 0, 0)
+        self.expand_direction: str = "down"
+
+        self.rebuild_from_changed_theme_data()
+        self.menu_states = {
+            "closed": UIClosedDropDownState(
+                self,
+                self.selected_option,
+                self.background_rect,
+                self.open_button_width,
+                self.expand_direction,
+                self.ui_manager,
+                self,
+                self.object_ids,
+                self.element_ids,
+                self.visible,
+                self.expand_on_option_click,
+            ),
+            "expanded": UIExpandedDropDownState(
+                self,
+                self.options_list,
+                self.selected_option,
+                self.background_rect,
+                self.open_button_width,
+                self.expand_direction,
+                self.ui_manager,
+                self,
+                self.object_ids,
+                self.element_ids,
+                self.expand_on_option_click,
+            ),
+        }
+        self.current_state = self.menu_states["closed"]
+        self.current_state.start(should_rebuild=True)
+
+    @property
+    def layer_thickness(self):
+        """
+        The layer thickness of the drop-down in the UI. This helps us get the correct draw order.
+
+        :return: an integer representing the number of drawing layers used by the drop-down menu.
+        """
+        return self.__layer_thickness_including_expansion
+
+    @layer_thickness.setter
+    def layer_thickness(self, value):
+        # make sure thickness is minimum of 4
+        self.__layer_thickness_including_expansion = max(4, value)
+
+    def add_options(self, new_options: Union[List[str], List[Tuple[str, str]]]) -> None:
+        """
+        Add new options to the drop-down. Will close the drop-down if it is currently open.
+
+        In many cases it may be easier just to recreate the drop-down with whatever the new options list is.
+
+        :param new_options: The list of new options to add.
+        """
+        for option in new_options:
+            if isinstance(option, str):
+                self.options_list.append((option, option))
+            else:
+                self.options_list.append(option)
+
+        expanded_state = self.menu_states["expanded"]
+        if isinstance(expanded_state, UIExpandedDropDownState):
+            expanded_state.options_list = self.options_list
+
+        # if we have the dropdown open - close it, so it can be reopened with the new options in place
+        self._close_dropdown_if_open()
+
+    def remove_options(
+        self, options_to_remove: Union[List[str], List[Tuple[str, str]]]
+    ) -> None:
+        """
+        Will remove all instances of the options provided.
+
+        :param options_to_remove: The list of new options to remove.
+        """
+        real_options_to_remove = []
+        for option in options_to_remove:
+            if isinstance(option, str):
+                real_options_to_remove.append((option, option))
+            else:
+                real_options_to_remove.append(option)
+        self.options_list = [
+            option
+            for option in self.options_list
+            if option not in real_options_to_remove
+        ]
+        expanded_state = self.menu_states["expanded"]
+        if isinstance(expanded_state, UIExpandedDropDownState):
+            expanded_state.options_list = self.options_list
+
+        # if we have the dropdown open - close it, so it can be reopened with the new options in place
+        self._close_dropdown_if_open()
+
+    def _close_dropdown_if_open(self):
+        if self.current_state == self.menu_states["expanded"]:
+            self._switch_to_closed_state()
+
+    def kill(self):
+        """
+        Overrides the standard sprite kill to also properly kill/finish the current state of the
+        drop-down. Depending on whether it is expanded or closed the drop-down menu will have
+        different elements to clean up.
+        """
+        if self.current_state is not None:
+            self.current_state.finish()
+        super().kill()
+
+    def unfocus(self):
+        super().unfocus()
+        if self.current_state is self.menu_states["expanded"]:
+            self.current_state.should_transition = True
+
+    def update(self, time_delta: float):
+        """
+        The update here deals with transitioning between the two states of the drop-down menu and
+        then passes the rest of the work onto whichever state is active.
+
+        :param time_delta: The time in second between calls to update.
+
+        """
+        super().update(time_delta)
+        if (
+            self.alive()
+            and self.current_state is not None
+            and self.current_state.should_transition
+        ):
+            self.current_state.finish()
+            self.current_state = self.menu_states[self.current_state.target_state]
+            self.current_state.selected_option = self.selected_option
+            self.current_state.start()
+
+    def process_event(self, event: pygame.event.Event) -> bool:
+        """
+        Handles various interactions with the drop-down menu by passing them along to the
+        active state.
+
+        :param event: The event to process.
+
+        :return: Return True if we want to consume this event, so it is not passed on to the
+                 rest of the UI.
+
+        """
+        return (
+            self.current_state.process_event(event)
+            if self.is_enabled and self.current_state is not None
+            else False
+        )
+
+    def rebuild_from_changed_theme_data(self):
+        """
+        Triggers the element to rebuild if any of its theming data has changed, which involves a
+        lot of checking and validating its theming data.
+
+        """
+        super().rebuild_from_changed_theme_data()
+        has_any_changed = False
+
+        if self._check_misc_theme_data_changed(
+            attribute_name="expand_direction",
+            default_value="down",
+            casting_func=str,
+            allowed_values=["up", "down"],
+        ):
+            has_any_changed = True
+
+        if self._check_misc_theme_data_changed(
+            attribute_name="shape",
+            default_value="rectangle",
+            casting_func=str,
+            allowed_values=["rectangle", "rounded_rectangle"],
+        ):
+            has_any_changed = True
+
+        if self._check_misc_theme_data_changed(
+            attribute_name="open_button_width", default_value=20, casting_func=int
+        ):
+            has_any_changed = True
+
+        if self._check_misc_theme_data_changed(
+            attribute_name="tool_tip_delay", default_value=1.0, casting_func=float
+        ):
+            has_any_changed = True
+
+        if self._check_shape_theming_changed(
+            defaults={
+                "border_width": {"left": 1, "right": 1, "top": 1, "bottom": 1},
+                "shadow_width": 2,
+                "border_overlap": 1,
+                "shape_corner_radius": [2, 2, 2, 2],
+            }
+        ):
+            has_any_changed = True
+
+        background_colour = self.ui_theme.get_colour_or_gradient(
+            "dark_bg", self.combined_element_ids
+        )
+        if background_colour != self.background_colour:
+            self.background_colour = background_colour
+            has_any_changed = True
+
+        border_colour = self.ui_theme.get_colour_or_gradient(
+            "normal_border", self.combined_element_ids
+        )
+        if border_colour != self.border_colour:
+            self.border_colour = border_colour
+            has_any_changed = True
+
+        disabled_background_colour = self.ui_theme.get_colour_or_gradient(
+            "disabled_dark_bg", self.combined_element_ids
+        )
+        if disabled_background_colour != self.disabled_background_colour:
+            self.disabled_background_colour = disabled_background_colour
+            has_any_changed = True
+
+        disabled_border_colour = self.ui_theme.get_colour_or_gradient(
+            "disabled_border", self.combined_element_ids
+        )
+        if disabled_border_colour != self.disabled_border_colour:
+            self.disabled_border_colour = disabled_border_colour
+            has_any_changed = True
+
+        if has_any_changed:
+            horizontal_border_and_shadow = self.border_width["left"] + self.shadow_width
+            vertical_border_and_shadow = self.border_width["top"] + self.shadow_width
+            self.background_rect = pygame.Rect(
+                self.relative_rect.x + horizontal_border_and_shadow,
+                self.relative_rect.y + vertical_border_and_shadow,
+                self.relative_rect.width
+                - (
+                    self.border_width["left"]
+                    + self.border_width["right"]
+                    + 2 * self.shadow_width
+                ),
+                self.relative_rect.height
+                - (
+                    self.border_width["top"]
+                    + self.border_width["bottom"]
+                    + 2 * self.shadow_width
+                ),
+            )
+
+            for _, state in self.menu_states.items():
+                state.expand_direction = self.expand_direction
+
+            self.rebuild()
+
+    def rebuild(self):
+        """
+        A complete rebuild of the drawable parts of this element.
+
+        """
+        if self.current_state is not None:
+            self.current_state.rebuild()
+
+    def set_position(self, position: Coordinate):
+        """
+        Sets the absolute screen position of this drop down, updating all subordinate button
+        elements at the same time.
+
+        :param position: The absolute screen position to set.
+
+        """
+        super().set_position(position)
+        if self.current_state is not None:
+            self.current_state.update_position()
+
+    def set_relative_position(self, position: Coordinate):
+        """
+        Sets the relative screen position of this drop down, updating all subordinate button
+        elements at the same time.
+
+        :param position: The relative screen position to set.
+
+        """
+        super().set_relative_position(position)
+        if self.current_state is not None:
+            self.current_state.update_position()
+
+    def set_dimensions(self, dimensions: Coordinate, clamp_to_container: bool = False):
+        """
+        Sets the dimensions of this drop down, updating all subordinate button
+        elements at the same time.
+
+        :param dimensions: The new dimensions to set.
+        :param clamp_to_container: Whether we should clamp the dimensions to the
+                                   dimensions of the container or not.
+
+        """
+        super().set_dimensions(dimensions)
+        if self.current_state is not None:
+            self.current_state.update_dimensions()
+
+    def on_fresh_drawable_shape_ready(self):
+        """
+        Called by an element's drawable shape when it has a new image surface ready for use,
+        normally after a rebuilding/redrawing of some kind.
+        """
+        if self.drawable_shape is not None:
+            self._set_image(self.drawable_shape.get_fresh_surface())
+
+    def disable(self):
+        """
+        Disables the button so that it is no longer interactive.
+        """
+        if self.is_enabled:
+            self.is_enabled = False
+            # switch back to the closed state if we are in the expanded state
+            if self.current_state is not None:
+                if self.current_state is self.menu_states["expanded"]:
+                    self._switch_to_closed_state()
+                if isinstance(self.current_state, UIClosedDropDownState):
+                    self.current_state.disable()
+
+    def _switch_to_closed_state(self):
+        if self.current_state is not None:
+            self.current_state.finish()
+        self.current_state = self.menu_states["closed"]
+        self.current_state.selected_option = self.selected_option
+        self.current_state.start()
+
+    def enable(self):
+        """
+        Re-enables the button so, we can once again interact with it.
+        """
+        if not self.is_enabled:
+            self.is_enabled = True
+            if self.current_state is not None and isinstance(
+                self.current_state, UIClosedDropDownState
+            ):
+                self.current_state.enable()
+
+    def show(self, show_contents: bool = True):
+        """
+        In addition to the base UIElement.show() - call show() on the closed state -
+        showing its buttons.
+        """
+        super().show(show_contents)
+        if self.current_state is not None and self.menu_states is not None:
+            closed_state = self.menu_states["closed"]
+            if isinstance(closed_state, UIClosedDropDownState):
+                closed_state.show()
+
+    def hide(self, hide_contents: bool = True):
+        """
+        In addition to the base UIElement.hide() - if the current state is 'expanded' call its
+        hide() method, which begins a transition of the UIDropDownMenu to the 'closed' state, and
+        call the hide() method of the 'closed' state which hides all it's children widgets.
+        """
+        if not self.visible:
+            return
+
+        super().hide(hide_contents)
+        if self.current_state is not None and self.menu_states is not None:
+            if self.current_state == self.menu_states["expanded"]:
+                self.menu_states["expanded"].hide()
+            self.menu_states["closed"].hide()
+
+    def sub_state_refresh_image(self):
+        """
+        A method to refresh the image surface of this drop-down by calling _set_image.
+        Used by the substates of the drop-down to update the image when the drop-down is expanded
+        or closed.
+        """
+        if self.drawable_shape is not None:
+            self._set_image(self.drawable_shape.get_fresh_surface())
