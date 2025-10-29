@@ -1,4 +1,4 @@
-# Chess P2P Game ♟️
+# Board Game P2P♟️
 
 Dự án game cờ vua và cờ tướng peer-to-peer viết bằng Python + Pygame theo hướng OOP.
 
