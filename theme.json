@@ -1,0 +1,42 @@
+{
+    "defaults": {
+        "font": {
+            "name": "fira_code",
+            "size": 16
+        }
+    },
+
+    "button": {
+        "colours": {
+            "normal_bg": "#404040",
+            "hover_bg": "#505050",
+            "active_bg": "#303030",
+            "normal_text": "#FFFFFF",
+            "hover_text": "#FFFFFF",
+            "active_text": "#FFFFFF",
+            "normal_border": "#808080"
+        },
+        "misc": {
+            "border_width": "1",
+            "shadow_width": "2",
+            "border_radius": "5"
+        }
+    },
+
+    "#host_button": {
+        "colours": {
+            "normal_bg": "#007A3E",
+            "hover_bg": "#009A4E",
+            "active_bg": "#005A2E",
+            "normal_text": "#FFFFFF"
+        }
+    },
+
+    "#join_button": {
+        "colours": {
+            "normal_bg": "#005EAA",
+            "hover_bg": "#007ECC",
+            "active_bg": "#004B8A"
+        }
+    }
+}
