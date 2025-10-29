@@ -1,14 +1,12 @@
-from typing import Tuple
-
 import numpy
-
-from pygame.surface import Surface
 
 # importing this way exports the functions in the typestubs
 from pygame.pixelcopy import (
     array_to_surface as array_to_surface,
     surface_to_array as surface_to_array,
 )
+from pygame.surface import Surface
+from typing_extensions import deprecated  # added in 3.13
 
 def array2d(surface: Surface) -> numpy.ndarray: ...
 def pixels2d(surface: Surface) -> numpy.ndarray: ...
@@ -26,6 +24,34 @@ def array_colorkey(surface: Surface) -> numpy.ndarray: ...
 def make_surface(array: numpy.ndarray) -> Surface: ...
 def blit_array(surface: Surface, array: numpy.ndarray) -> None: ...
 def map_array(surface: Surface, array: numpy.ndarray) -> numpy.ndarray: ...
+@deprecated("Only numpy is supported")
 def use_arraytype(arraytype: str) -> None: ...
+@deprecated("Only numpy is supported")
 def get_arraytype() -> str: ...
-def get_arraytypes() -> Tuple[str]: ...
+@deprecated("Only numpy is supported")
+def get_arraytypes() -> tuple[str]: ...
+
+# keep in sync with surfarray.py
+__all__ = [
+    "array2d",
+    "array3d",
+    "array_alpha",
+    "array_blue",
+    "array_colorkey",
+    "array_green",
+    "array_red",
+    "array_to_surface",
+    "blit_array",
+    "get_arraytype",
+    "get_arraytypes",
+    "make_surface",
+    "map_array",
+    "pixels2d",
+    "pixels3d",
+    "pixels_alpha",
+    "pixels_blue",
+    "pixels_green",
+    "pixels_red",
+    "surface_to_array",
+    "use_arraytype",
+]

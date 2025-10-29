@@ -1,8 +1,6 @@
-from typing import Tuple
+from typing import Literal
 
-from ._common import Literal
-
-class SoftwareVersion(Tuple[int, int, int]):
+class SoftwareVersion(tuple[int, int, int]):
     def __new__(cls, major: int, minor: int, patch: int) -> SoftwareVersion: ...
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
@@ -12,7 +10,7 @@ class SoftwareVersion(Tuple[int, int, int]):
     def minor(self) -> int: ...
     @property
     def patch(self) -> int: ...
-    fields: Tuple[Literal["major"], Literal["minor"], Literal["patch"]]
+    fields: tuple[Literal["major"], Literal["minor"], Literal["patch"]]
 
 class PygameVersion(SoftwareVersion): ...
 class SDLVersion(SoftwareVersion): ...
@@ -21,3 +19,6 @@ SDL: SDLVersion
 ver: str
 vernum: PygameVersion
 rev: str
+
+# keep in sync with version.py
+__all__ = ["SDL", "ver", "vernum", "rev"]
