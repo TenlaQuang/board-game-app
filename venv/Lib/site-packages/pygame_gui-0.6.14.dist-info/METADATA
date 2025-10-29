@@ -1,0 +1,35 @@
+Metadata-Version: 2.2
+Name: pygame_gui
+Version: 0.6.14
+Summary: A GUI module for pygame Community Edition
+Home-page: https://github.com/MyreMylar/pygame_gui
+Download-URL: https://github.com/MyreMylar/pygame_gui/archive/v_0613.tar.gz
+Author: Dan Lawrence
+Author-email: danintheshed@gmail.com
+License: MIT
+Keywords: pygame,gui,ui
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.10
+License-File: LICENSE.txt
+Requires-Dist: pygame-ce>=2.5.3
+Requires-Dist: python-i18n>=0.3.9
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: download-url
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+Helps create GUIs for games made using pygame Community Edition. Features HTML-style text formatting, localization,theme files to control the look and a system to manage multiple windows of GUI stuff.
