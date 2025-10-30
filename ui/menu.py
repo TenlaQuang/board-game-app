@@ -16,14 +16,14 @@ class MainMenu:
         # Tạo các nút bấm
         self.play_chess_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((x_pos, 200), (button_width, button_height)),
-            text='Chơi Cờ Vua Offline',
+            text='Play Chess Offline',
             manager=self.ui_manager,
             object_id='#play_chess_button'
         )
         
         self.play_xiangqi_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((x_pos, 280), (button_width, button_height)), # Cách 80px
-            text='Chơi Cờ Tướng Offline',
+            text='Play Xiangqi Offline',
             manager=self.ui_manager,
             object_id='#play_xiangqi_button'
         )
