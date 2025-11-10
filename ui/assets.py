@@ -1,15 +1,19 @@
 import pygame
 import os
 
-def load_chess_images():
-    base_path = os.path.join("ui", "assets", "images", "chess")
-    pieces = ["pawn", "rook", "knight", "bishop", "queen", "king"]
-    colors = ["white", "black"]
+# Bạn có thể định nghĩa các biến chứa assets ở đây để file khác import
+PIECES = {}
+FONTS = {}
 
-    images = {}
-    for color in colors:
-        for piece in pieces:
-            name = f"{color}_{piece}"
-            path = os.path.join(base_path, f"{name}.png")
-            images[name] = pygame.transform.scale(pygame.image.load(path), (58, 80))
-    return images
+def load_assets():
+    """
+    Đây là hàm mà __init__.py và main.py đang tìm kiếm.
+    Hiện tại nó chưa làm gì, nhưng nó "tồn tại" là sẽ hết lỗi.
+    """
+    print("Hàm load_assets đã được gọi (sẽ tải ảnh, font ở đây sau)...")
+    
+    # TODO: Thêm code tải ảnh và font của bạn vào đây
+    
+    pass
+
+# (Bạn có thể thêm các hàm helper khác ở đây)

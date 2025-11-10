@@ -12,3 +12,16 @@ from .menu import MenuScreen
 
 # (Bạn có thể thêm cả BoardUI, v.v...)
 # from .board_ui import BoardUI
+# ui/__init__.py
+
+# Quảng bá class chính
+
+
+# Quảng bá các class "Cảnh"
+from .menu import MainMenu
+from .board_ui import BoardUI
+from .chess_menu import ChessMenu
+from .xiangqi_menu import XiangqiMenu
+
+# Quảng bá các hàm và tài nguyên
+from .assets import load_assets, CHESS_PIECES, XIANGQI_PIECES
