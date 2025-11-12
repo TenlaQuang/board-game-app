@@ -1,8 +1,8 @@
 # ui/xiangqi_menu.py
 import pygame
 import pygame_gui
-# Import ảnh nút Cờ Tướng (bạn cần cập nhật assets.py)
-from .assets import XIANGQI_BUTTONS
+# Import ảnh nút Cờ Tướng
+from .assets import XIANGQI_BUTTONS 
 from utils.constants import WIDTH
 
 class XiangqiMenu:
@@ -30,7 +30,8 @@ class XiangqiMenu:
             )
             self.button_list.append(self.play_button)
         else:
-            print("Cảnh báo (XiangqiMenu): Không tìm thấy ảnh cho nút 'Play'.")
+            # Tạo nút dự phòng nếu không có ảnh
+            print("Cảnh báo (XiangqiMenu): Không tìm thấy ảnh cho nút 'Play'. Dùng nút dự phòng.")
             self.play_button = pygame_gui.elements.UIButton(
                 relative_rect=pygame.Rect(((WIDTH-300)//2, 550), (300, 100)),
                 text='Play (Missing Image)',
@@ -38,8 +39,6 @@ class XiangqiMenu:
             )
             self.button_list.append(self.play_button)
             
-        # TODO: Tạo thêm các nút 'Puzzles', 'Friends', 'Shop' bằng UIImageButton
-
         # Nút Quay Lại
         self.back_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((10, 10), (100, 40)),

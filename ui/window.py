@@ -1,85 +1,165 @@
-# Đây là nội dung ĐẦY ĐỦ cho file: ui/window.py
-
+# ui/window.py (Phiên bản MỚI NHẤT, hỗ trợ đa menu và nền chuyển động)
 import pygame
 import pygame_gui
+from utils.constants import (
+    WIDTH, HEIGHT, FPS,
+    LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR,
+    XIANGQI_LIGHT_BACKGROUND_COLOR, XIANGQI_DARK_BACKGROUND_COLOR
+)
+from core import Board 
+
+# Import TẤT CẢ các "cảnh" (scenes) của bạn
 from .menu import MainMenu
-from utils.constants import WIDTH, HEIGHT, FPS  # Import các hằng số
+from .board_ui import BoardUI
+from .chess_menu import ChessMenu       # Cảnh menu cờ vua
+from .xiangqi_menu import XiangqiMenu # Cảnh menu cờ tướng
+from .animated_background import AnimatedBackground # <-- LỚP NỀN CHUYỂN ĐỘNG
+
+# Import TẤT CẢ các tài nguyên
+from ui.assets import (
+    load_assets, 
+    CHESS_PIECES, XIANGQI_PIECES, 
+    MAIN_MENU_BACKGROUND # Chỉ cần nền của menu chính
+)
 
 class App:
-    
-    # --- PHẦN 1: KHỞI TẠO (SETUP) ---
     def __init__(self):
-        """Hàm khởi tạo, chạy 1 lần duy nhất khi game bắt đầu."""
+        """Khởi tạo toàn bộ ứng dụng."""
         pygame.init()
         
-        # 1. Tạo cửa sổ (self.screen)
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Board Game P2P")
-        
-        # 2. Tạo đồng hồ
         self.clock = pygame.time.Clock()
         self.running = True
 
-        # 3. Khởi tạo UI Manager
+        # 1. Tải tất cả tài nguyên (ảnh nút, ảnh quân cờ, nền menu chính)
+        load_assets() 
+
+        # 2. Khởi tạo UI Manager
         self.ui_manager = pygame_gui.UIManager((WIDTH, HEIGHT), 'theme.json') 
 
-        # 4. Tạo các "màn hình" (phải sau khi có self.screen và self.ui_manager)
+        # 3. Tạo TẤT CẢ các "màn hình" của game
+        # Các màn hình này sẽ được ẩn/hiện khi cần
         self.main_menu = MainMenu(self.screen, self.ui_manager)
-        # self.game_screen = None # Sẽ làm sau
+        self.chess_menu = ChessMenu(self.screen, self.ui_manager)
+        self.xiangqi_menu = XiangqiMenu(self.screen, self.ui_manager)
         
-        # 5. Đặt trạng thái game ban đầu
-        self.state = 'MAIN_MENU'
+        self.game_screen = None # Màn hình game chỉ được tạo khi vào trận
 
-    # --- PHẦN 2: VÒNG LẶP CHÍNH (ĐỘNG CƠ) ---
-    def run(self):
-        """Vòng lặp game chính, chạy 60 lần mỗi giây."""
+        # --- 4. TẠO CÁC NỀN CHUYỂN ĐỘNG ---
+        self.chess_menu_background_animated = AnimatedBackground(
+            WIDTH, HEIGHT,
+            square_size=80,      # Kích thước ô vuông
+            scroll_speed=120,    # Tốc độ (đã sửa cho mượt)
+            light_color=LIGHT_SQUARE_COLOR, # Tên tham số đúng
+            dark_color=DARK_SQUARE_COLOR  # Tên tham số đúng
+        )
         
+        self.xiangqi_menu_background_animated = AnimatedBackground(
+            WIDTH, HEIGHT,
+            square_size=80,      # Kích thước ô vuông (bằng nhau)
+            scroll_speed=150,    # Tốc độ (đã sửa cho mượt)
+            light_color=XIANGQI_LIGHT_BACKGROUND_COLOR, # Tên tham số đúng
+            dark_color=XIANGQI_DARK_BACKGROUND_COLOR  # Tên tham số đúng
+        )
+        # ------------------------------------
+
+        # 5. Đặt trạng thái game ban đầu (FIX LỖI)
+        self.state = 'MAIN_MENU'
+        self.main_menu.show() # Chỉ hiện menu chính lúc đầu
+
+    def run(self):
+        """Vòng lặp game chính (State Machine)."""
         while self.running:
-            # 1. Lấy time_delta (quan trọng cho GUI)
+            # 1. Lấy time_delta (quan trọng cho FPS cao)
             time_delta = self.clock.tick(FPS) / 1000.0
             
-            # 2. XỬ LÝ SỰ KIỆN (Fix lỗi "Not Responding")
+            # --- 2. XỬ LÝ SỰ KIỆN ---
             events = pygame.event.get()
             for event in events:
-                
-                # 2a. Bắt sự kiện QUIT (nhấn nút X)
                 if event.type == pygame.QUIT:
                     self.running = False
                 
-                # 2b. Đưa sự kiện cho UI Manager (để xử lý nút bấm)
+                # Đưa sự kiện cho UI Manager
                 self.ui_manager.process_events(event)
                 
-                # 2c. Đưa sự kiện cho state hiện tại
+                # Đưa sự kiện cho "cảnh" (state) hiện tại
                 if self.state == 'MAIN_MENU':
                     next_state = self.main_menu.handle_events(event)
-                    
                     if next_state == 'QUIT':
                         self.running = False
-                    elif next_state == 'PLAY_OFFLINE':
-                        print("Chuyển sang màn hình chơi game!")
-                        self.state = 'GAME_SCREEN'
-                    # (Thêm các state 'HOST_GAME', 'JOIN_GAME'...)
-                
-                elif self.state == 'GAME_SCREEN':
-                    # (Sau này sẽ gọi self.game_screen.handle_events(event))
-                    pass
+                    elif next_state == 'PLAY_CHESS':
+                        self.main_menu.hide()
+                        self.chess_menu.show()
+                        self.state = 'CHESS_MENU'
+                    elif next_state == 'PLAY_XIANGQI':
+                        self.main_menu.hide()
+                        self.xiangqi_menu.show()
+                        self.state = 'XIANGQI_MENU'
+                    # TODO: Xử lý 'HOST_GAME', 'JOIN_GAME'
 
-            # 3. CẬP NHẬT (Update)
+                elif self.state == 'CHESS_MENU':
+                    next_state = self.chess_menu.handle_events(event)
+                    if next_state == 'BACK_TO_MAIN_MENU':
+                        self.chess_menu.hide()
+                        self.main_menu.show()
+                        self.state = 'MAIN_MENU'
+                    elif next_state == 'PLAY_CHESS_QUICK':
+                        self.chess_menu.hide()
+                        game_logic = Board(game_type='chess')
+                        self.game_screen = BoardUI(self.screen, game_logic, CHESS_PIECES)
+                        self.state = 'GAME_SCREEN'
+
+                elif self.state == 'XIANGQI_MENU':
+                    next_state = self.xiangqi_menu.handle_events(event)
+                    if next_state == 'BACK_TO_MAIN_MENU':
+                        self.xiangqi_menu.hide()
+                        self.main_menu.show()
+                        self.state = 'MAIN_MENU'
+                    elif next_state == 'PLAY_XIANGQI_QUICK':
+                        self.xiangqi_menu.hide()
+                        game_logic = Board(game_type='chinese_chess')
+                        self.game_screen = BoardUI(self.screen, game_logic, XIANGQI_PIECES)
+                        self.state = 'GAME_SCREEN'
+
+                elif self.state == 'GAME_SCREEN':
+                    if self.game_screen:
+                        self.game_screen.handle_events(event)
+                    # TODO: Thêm logic quay lại menu
+
+            # --- 3. CẬP NHẬT LOGIC ---
             self.ui_manager.update(time_delta)
             
-            # 4. VẼ LÊN MÀN HÌNH (Draw)
+            # Cập nhật nền chuyển động (nếu đang ở state đó)
+            if self.state == 'GAME_SCREEN' and self.game_screen:
+                self.game_screen.update()
+            elif self.state == 'CHESS_MENU':
+                self.chess_menu_background_animated.update(time_delta) # Update nền Cờ Vua
+            elif self.state == 'XIANGQI_MENU':
+                self.xiangqi_menu_background_animated.update(time_delta) # Update nền Cờ Tướng
+
+            # --- 4. VẼ LÊN MÀN HÌNH ---
             
-            # 4a. Xóa màn hình bằng một màu nền
-            self.screen.fill((20, 20, 20)) 
+            # 4a. Vẽ nền (background) tùy theo state
+            if self.state == 'MAIN_MENU':
+                if MAIN_MENU_BACKGROUND:
+                    self.screen.blit(MAIN_MENU_BACKGROUND, (0, 0))
+                else:
+                    self.screen.fill((20, 20, 20)) # Nền đen mặc định
             
-            # 4b. Vẽ state hiện tại (nếu cần)
-            # (Phần draw() của MainMenu không cần gọi vì GUI tự vẽ)
+            elif self.state == 'CHESS_MENU':
+                self.chess_menu_background_animated.draw(self.screen) # Vẽ nền Cờ Vua
             
-            # 4c. Vẽ UI Manager (vẽ các nút bấm lên trên cùng)
+            elif self.state == 'XIANGQI_MENU':
+                self.xiangqi_menu_background_animated.draw(self.screen) # Vẽ nền Cờ Tướng
+
+            elif self.state == 'GAME_SCREEN' and self.game_screen:
+                self.game_screen.draw() # BoardUI tự vẽ nền
+
+            # 4b. Vẽ các nút UI (luôn ở trên cùng)
             self.ui_manager.draw_ui(self.screen)
             
-            # 5. LẬT MÀN HÌNH (Cập nhật những gì đã vẽ)
+            # 4c. Cập nhật màn hình
             pygame.display.flip()
             
-        # Hết vòng lặp (self.running = False)
         pygame.quit()
