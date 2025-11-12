@@ -9,8 +9,10 @@ class AnimatedBackground:
     Một lớp đa năng để vẽ và cuộn nền dạng ô vuông một cách vô hạn.
     Có thể tùy chỉnh màu sắc và kích thước ô.
     """
-    def __init__(self, screen_width, screen_height, square_size=100, scroll_speed=10, 
+    def __init__(self, screen_width, screen_height, square_size=100, scroll_speed=20, 
                  light_color=LIGHT_SQUARE_COLOR, dark_color=DARK_SQUARE_COLOR):
+        
+        # Lưu trữ các tham số
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.square_size = square_size
@@ -19,16 +21,19 @@ class AnimatedBackground:
         self.dark_color = dark_color
 
         # Kích thước surface cần lớn hơn màn hình để cuộn mượt
+        # Chúng ta cần nó lặp lại sau mỗi 2 ô cờ (sáng/tối)
         self.loop_size = self.square_size * 2
         
         # Kích thước surface lớn hơn màn hình + kích thước lặp
-        self.surface_width = self.screen_width + self.loop_size
-        self.surface_height = self.screen_height + self.loop_size
+        # +1 để đảm bảo bao phủ hoàn toàn
+        self.surface_width = self.screen_width + self.loop_size + 1 
+        self.surface_height = self.screen_height + self.loop_size + 1
         
         # Tạo surface (bảng vẽ) một lần duy nhất
         self.surface = pygame.Surface((self.surface_width, self.surface_height))
         self._draw_pattern() # Vẽ họa tiết lên surface
 
+        # Vị trí cuộn ban đầu
         self.scroll_x = 0.0
         self.scroll_y = 0.0
 
@@ -67,4 +72,3 @@ class AnimatedBackground:
         
         # Vẽ surface lớn của chúng ta lên màn hình tại vị trí đã cuộn
         screen.blit(self.surface, (x_offset, y_offset))
-
