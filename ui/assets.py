@@ -1,25 +1,22 @@
-# ui/assets.py (Phiên bản MỚI NHẤT, hỗ trợ nền chuyển động)
+# Trong file: ui/assets.py
+
 import pygame
 import os
 from utils.constants import (
     ASSETS_DIR, WIDTH, HEIGHT,
-    CHESS_PIECES_DIR, XIANGQI_PIECES_DIR
+    CHESS_PIECES_DIR, XIANGQI_PIECES_DIR,
+    IMAGES_DIR  # <--- CHẮC CHẮN RẰNG BẠN ĐÃ IMPORT IMAGES_DIR
 )
 
 # --- KHAI BÁO CÁC BIẾN "KHO" ---
-# Các file khác (như window.py) sẽ import các biến này
 CHESS_PIECES = {}
 XIANGQI_PIECES = {}
-
-CHESS_BUTTONS = {}        # Dict chứa ảnh nút cờ vua
-XIANGQI_BUTTONS = {}      # Dict chứa ảnh nút cờ tướng
-
+CHESS_BUTTONS = {}
+XIANGQI_BUTTONS = {}
 MAIN_MENU_BACKGROUND = None
-# CHESS_MENU_BACKGROUND (Đã xóa, dùng nền chuyển động)
-# XIANGQI_MENU_BACKGROUND (Đã xóa, dùng nền chuyển động)
-# ---------------------------------
+XIANGQI_BOARD_IMG = None # <-- Đã có
 
-# Kích thước quân cờ (tính toán 1 lần)
+# (Tôi sửa lại lỗi typo ở đây, Cờ Vua là 8 ô)
 DEFAULT_CHESS_PIECE_SIZE = WIDTH // 8 
 DEFAULT_XIANGQI_PIECE_SIZE = WIDTH // 9 
 
@@ -43,59 +40,71 @@ def load_assets():
     """Tải TẤT CẢ tài nguyên (ảnh nền, ảnh nút, ảnh quân cờ)."""
     print("Đang tải tài nguyên...")
     
-    # Cần global để gán giá trị cho biến "kho" ở trên
-    global MAIN_MENU_BACKGROUND
+    # <-- THÊM XIANGQI_BOARD_IMG VÀO GLOBAL
+    global MAIN_MENU_BACKGROUND, CHESS_PIECES, XIANGQI_PIECES, XIANGQI_BOARD_IMG
 
     # --- 1. Tải Quân Cờ ---
-    # ----- Tải hình ảnh Cờ Vua -----
-    chess_symbols = ['K', 'Q', 'R', 'B', 'N', 'P', 'k', 'q', 'r', 'b', 'n', 'p']
-    for symbol in chess_symbols:
-        filepath = os.path.join(CHESS_PIECES_DIR, f'{symbol}.png')
+    
+    # ----- Tải hình ảnh Cờ Vua (ĐÃ SỬA) -----
+    print("Đang tải ảnh Cờ Vua...")
+    chess_file_map = {
+        'P': 'white_pawn', 'R': 'white_rook', 'N': 'white_knight', 'B': 'white_bishop', 'Q': 'white_queen', 'K': 'white_king',
+        'p': 'black_pawn', 'r': 'black_rook', 'n': 'black_knight', 'b': 'black_bishop', 'q': 'black_queen', 'k': 'black_king'
+    }
+    for symbol, file_name in chess_file_map.items():
+        filepath = os.path.join(CHESS_PIECES_DIR, f'{file_name}.png')
         if os.path.exists(filepath):
             try:
                 image = pygame.image.load(filepath).convert_alpha()
                 CHESS_PIECES[symbol] = pygame.transform.scale(image, (DEFAULT_CHESS_PIECE_SIZE, DEFAULT_CHESS_PIECE_SIZE))
             except pygame.error as e:
                 print(f"Không thể tải ảnh cờ vua {filepath}: {e}")
-        # else:
-            # print(f"File ảnh cờ vua không tìm thấy: {filepath}")
+        else:
+            print(f"File ảnh cờ vua không tìm thấy: {filepath}")
 
-    # ----- Tải hình ảnh Cờ Tướng -----
-    xiangqi_symbols = ['C', 'H', 'E', 'A', 'G', 'O', 'S', 'c', 'h', 'e', 'a', 'g', 'o', 's']
-    for symbol in xiangqi_symbols:
-        filepath = os.path.join(XIANGQI_PIECES_DIR, f'{symbol}.png')
+            
+    # ----- Tải hình ảnh Cờ Tướng (ĐÃ THÊM LOGIC MỚI) -----
+    print("Đang tải ảnh Cờ Tướng...")
+    xiangqi_file_map = {
+        'G': 'red_general', 'A': 'red_advisor', 'E': 'red_elephant', 'H': 'red_horse', 'C': 'red_chariot', 'O': 'red_cannon', 'S': 'red_soldier',
+        'g': 'black_general', 'a': 'black_advisor', 'e': 'black_elephant', 'h': 'black_horse', 'c': 'black_chariot', 'o': 'black_cannon', 's': 'black_soldier'
+    }
+    for symbol, file_name in xiangqi_file_map.items():
+        filepath = os.path.join(XIANGQI_PIECES_DIR, f'{file_name}.png')
         if os.path.exists(filepath):
             try:
                 image = pygame.image.load(filepath).convert_alpha()
                 XIANGQI_PIECES[symbol] = pygame.transform.scale(image, (DEFAULT_XIANGQI_PIECE_SIZE, DEFAULT_XIANGQI_PIECE_SIZE))
             except pygame.error as e:
                 print(f"Không thể tải ảnh cờ tướng {filepath}: {e}")
-        # else:
-            # print(f"File ảnh cờ tướng không tìm thấy: {filepath}")
+        else:
+            print(f"File ảnh cờ tướng không tìm thấy: {filepath}")
+            
 
     # --- 2. Tạo Ảnh Nền Gradient (Chỉ cho Menu Chính) ---
     print("Đang tạo nền gradient...")
-    
-    # Màu cho Menu Chính (xám đậm -> đen)
     MAIN_MENU_BACKGROUND = _create_gradient_background(WIDTH, HEIGHT, (40, 40, 40), (10, 10, 10))
-    
-    # (Đã xóa code tạo nền Cờ Vua và Cờ Tướng vì dùng nền chuyển động)
-    
     print("Tạo nền gradient (Menu chính) hoàn tất.")
 
-    # --- 3. Tải Ảnh Nút (Quan trọng) ---
-    # (Phần này giữ nguyên để tải ảnh nút tùy chỉnh)
+    # --- 3. TẢI ẢNH NỀN BÀN CỜ (PHẦN BỊ THIẾU) ---
+    print("Đang tải ảnh nền bàn cờ...")
     try:
-        # Tải nút Cờ Vua
+        # Tải và scale ảnh cho vừa màn hình
+        img_path = os.path.join(IMAGES_DIR, 'xiangqi_board.png')
+        img = pygame.image.load(img_path).convert()
+        XIANGQI_BOARD_IMG = pygame.transform.scale(img, (WIDTH, HEIGHT))
+        print("Đã tải ảnh nền Cờ Tướng.")
+    except Exception as e:
+        print(f"LỖI: Không tải được 'xiangqi_board.png': {e}")
+        print("Bàn cờ tướng sẽ dùng màu nền dự phòng.")
+
+    # --- 4. Tải Ảnh Nút ---
+    try:
         CHESS_BUTTONS['quick_play_normal'] = pygame.image.load(os.path.join(ASSETS_DIR, 'button_quickplay_normal.png')).convert_alpha()
         CHESS_BUTTONS['quick_play_hover'] = pygame.image.load(os.path.join(ASSETS_DIR, 'button_quickplay_hover.png')).convert_alpha()
-        
-        # Tải nút Cờ Tướng
         XIANGQI_BUTTONS['play_normal'] = pygame.image.load(os.path.join(ASSETS_DIR, 'button_play_normal.png')).convert_alpha()
         XIANGQI_BUTTONS['play_hover'] = pygame.image.load(os.path.join(ASSETS_DIR, 'button_play_hover.png')).convert_alpha()
-        
     except (pygame.error, FileNotFoundError) as e: 
         print(f"CẢNH BÁO (hoặc file không tìm thấy) cho nút: {e}")
-        print("BỎ QUA: Vui lòng tạo file ảnh (ví dụ: assets/button_quickplay_normal.png)")
 
     print("Tải tài nguyên hoàn tất.")

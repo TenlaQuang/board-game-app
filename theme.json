@@ -1,8 +1,9 @@
 {
     "defaults": {
         "font": {
-            "name": "fira_code",
-            "size": 18
+            "name": "Roboto",
+            "size": 18,
+            "regular_path": "ui/assets/fonts/Roboto-Regular.ttf"
         }
     },
     "button": {
@@ -21,18 +22,28 @@
             "border_radius": "5"
         }
     },
-    "#play_chess_button": {
+    "#chess_button": {
         "colours": {
             "normal_bg": "#4A6E4A",
             "hover_bg": "#5A7E5A",
             "active_bg": "#3A5E3A"
+        },
+        "font": {
+            "name": "Roboto",
+            "size": 22,
+            "regular_path": "ui/assets/fonts/Roboto-Regular.ttf"
         }
     },
-    "#play_xiangqi_button": {
+    "#xiangqi_button": {
         "colours": {
             "normal_bg": "#B04B4B",
             "hover_bg": "#C05B5B",
             "active_bg": "#A03B3B"
+        },
+        "font": {
+            "name": "Roboto",
+            "size": 22,
+            "regular_path": "ui/assets/fonts/Roboto-Regular.ttf"
         }
     },
     "#host_button": {
@@ -40,6 +51,23 @@
             "normal_bg": "#007A3E",
             "hover_bg": "#009A4E",
             "active_bg": "#005A2E"
+        },
+        "font": {
+            "name": "Roboto",
+            "size": 22,
+            "regular_path": "ui/assets/fonts/Roboto-Regular.ttf"
+        }
+    },
+    "#server_button": {
+        "colours": {
+            "normal_bg": "#007A3E",
+            "hover_bg": "#009A4E",
+            "active_bg": "#005A2E"
+        },
+        "font": {
+            "name": "Roboto",
+            "size": 22,
+            "regular_path": "ui/assets/fonts/Roboto-Regular.ttf"
         }
     },
     "#join_button": {
@@ -54,6 +82,11 @@
             "normal_bg": "#A03030",
             "hover_bg": "#B04040",
             "active_bg": "#902020"
+        },
+        "font": {
+            "name": "Roboto",
+            "size": 22,
+            "regular_path": "ui/assets/fonts/Roboto-Regular.ttf"
         }
     }
 }
