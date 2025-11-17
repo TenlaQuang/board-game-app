@@ -1,4 +1,4 @@
-# Board Game P2P♟️
+# Board Game P2P lai♟️
 
 Dự án game cờ vua và cờ tướng peer-to-peer viết bằng Python + Pygame theo hướng OOP.
 
