@@ -19,7 +19,7 @@ class MainMenu:
         # --- Duay lai các nút bấm ban đầu ---
         self.chess_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((x_pos, 200), (button_width, button_height)),
-            text='Chơi Cờ Vua', 
+            text='Chơi Cờ Vua (Offline)', # Sửa text
             manager=self.ui_manager,
             object_id='#chess_button'
         )
@@ -27,19 +27,20 @@ class MainMenu:
 
         self.xiangqi_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((x_pos, 280), (button_width, button_height)), # Cách 80px
-            text='Chơi Cờ Tướng', 
+            text='Chơi Cờ Tướng (Offline)', # Sửa text
             manager=self.ui_manager,
             object_id='#xiangqi_button'
         )
         self.button_list.append(self.xiangqi_button)
 
-        self.server_button = pygame_gui.elements.UIButton(
+        # --- MODIFIED: Thay thế nút "Bật Server" bằng "Chơi Online" ---
+        self.play_online_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((x_pos, 360), (button_width, button_height)),
-            text='Bật Server (Host)',
+            text='Choi Online (P2P)', # <-- MODIFIED: Đổi text
             manager=self.ui_manager,
-            object_id='#server_button'
+            object_id='#play_online_button' # <-- MODIFIED: Đổi ID (tùy chọn)
         )
-        self.button_list.append(self.server_button)
+        self.button_list.append(self.play_online_button) # <-- MODIFIED: Thêm nút mới
         
         # (Tôi thêm lại nút Thoát để dễ sử dụng)
         self.quit_button = pygame_gui.elements.UIButton(
@@ -60,9 +61,12 @@ class MainMenu:
                 return 'PLAY_CHESS' # Tín hiệu mở menu cờ vua
             if event.ui_element == self.xiangqi_button:
                 return 'PLAY_XIANGQI' # Tín hiệu mở menu cờ tướng
-            if event.ui_element == self.server_button:
-                print("Bật server...")
-                return 'HOST_GAME' # (Sẽ xử lý sau)
+            
+            # --- MODIFIED: "Nối dây" nút Chơi Online ---
+            if event.ui_element == self.play_online_button: # <-- MODIFIED
+                print("[MainMenu] Nút 'Chơi Online' đã được bấm!")
+                return 'PLAY_ONLINE' # <-- MODIFIED: Đây là tín hiệu quan trọng
+            
             if event.ui_element == self.quit_button:
                 return 'QUIT'
         return None

@@ -2,7 +2,8 @@
 # Nhiệm vụ: Khởi tạo NetworkManager và App, sau đó "tiêm" manager vào App.
 
 import sys
-import pygame # <-- ĐÃ THÊM: Thêm import này
+# KHÔNG CẦN pygame ở đây nữa
+
 from ui.window import App # <-- Import class App từ file window.py
 
 # Kiểm tra xem file network_manager.py có tồn tại không
@@ -16,9 +17,7 @@ except ImportError:
 # Cấu hình (Bạn có thể đưa vào UI sau)
 SERVER_IP = "127.0.0.1" # <-- ĐỔI THÀNH IP CỦA SERVER MAI MỐI (127.0.0.1 nếu chạy test ở máy)
 SERVER_PORT = 9999
-# Lấy username từ UI, tạm thời hardcode
-pygame.init() # <-- ĐÃ THÊM: Khởi tạo pygame trước khi dùng time
-MY_USERNAME = f"Player{pygame.time.get_ticks() % 1000}" 
+# KHÔNG CẦN MY_USERNAME ở đây nữa
 
 if __name__ == "__main__":
     
@@ -26,7 +25,8 @@ if __name__ == "__main__":
     network_manager = NetworkManager()
     
     # 2. Tạo App (Giao diện) và "tiêm" network_manager vào
-    app = App(network_manager, SERVER_IP, SERVER_PORT, MY_USERNAME)
+    # MODIFIED: Xóa MY_USERNAME khỏi hàm khởi tạo
+    app = App(network_manager, SERVER_IP, SERVER_PORT)
     
     # 3. Chạy game
     try:
