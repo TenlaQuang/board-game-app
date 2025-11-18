@@ -11,7 +11,6 @@ try:
     from network.network_manager import NetworkManager # <-- Import class NetworkManager
 except ImportError:
     print("LỖI: Không tìm thấy file 'network/network_manager.py'.")
-    print("Vui lòng tạo file này từ code mẫu tôi đã gửi.")
     sys.exit(1)
 
 # Cấu hình (Bạn có thể đưa vào UI sau)
