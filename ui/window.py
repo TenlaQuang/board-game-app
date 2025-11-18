@@ -1,320 +1,346 @@
+# ui/window.py (Phiên bản hoàn chỉnh, hỗ trợ PLAY_ONLINE không block UI)
+import threading
 import pygame
 import pygame_gui
-import queue 
-
-from pygame_gui.elements import UILabel, UISelectionList, UIButton, UITextEntryBox
-from pygame_gui.windows import UIConfirmationDialog, UIMessageWindow
-
 from utils.constants import (
     WIDTH, HEIGHT, FPS,
     LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR,
     XIANGQI_LIGHT_BACKGROUND_COLOR, XIANGQI_DARK_BACKGROUND_COLOR
 )
+from core import Board
 
-from core.board import Board 
-from core.game_state import GameState
-from core.move_validator import MoveValidator
-
+# Import TẤT CẢ các "cảnh" (scenes) của bạn
 from .menu import MainMenu
 from .board_ui import BoardUI
-from .chess_menu import ChessMenu      
-from .xiangqi_menu import XiangqiMenu 
-from .animated_background import AnimatedBackground
+from .chess_menu import ChessMenu      # Cảnh menu cờ vua
+from .xiangqi_menu import XiangqiMenu # Cảnh menu cờ tướng
+from .animated_background import AnimatedBackground # <-- LỚP NỀN CHUYỂN ĐỘNG
 
+# Import TẤT CẢ các tài nguyên
 from ui.assets import (
-    load_assets, 
-    CHESS_PIECES, XIANGQI_PIECES, 
-    MAIN_MENU_BACKGROUND 
+    load_assets,
+    CHESS_PIECES, XIANGQI_PIECES,
+    MAIN_MENU_BACKGROUND  # Chỉ cần nền của menu chính
 )
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from network.network_manager import NetworkManager
 
 
 class App:
-    def __init__(self, network_manager: 'NetworkManager', server_ip: str, server_port: int):
-        """Khởi tạo toàn bộ ứng dụng."""
+    def __init__(self, network_manager, server_ip, server_port):
+        # Network
+        self.network_manager = network_manager
+        self.server_ip = server_ip
+        self.server_port = server_port
+
+        # Thread / state flags for online flow
+        self._online_thread = None
+        self._online_result = None      # (ip, port) on success
+        self._online_error = None       # error message
+        self._online_connected = False  # True when P2P connected
+
         pygame.init()
-        
+
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Board Game P2P")
         self.clock = pygame.time.Clock()
         self.running = True
 
-        # --- 1. Thiết lập mạng ---
-        self.network = network_manager
-        self.server_ip = server_ip
-        self.server_port = server_port
-        self.username = None 
-        self.my_role = None 
-        self.opponent_username = None
-        self.invite_from = None 
+        # 1. Tải tất cả tài nguyên (ảnh nút, ảnh quân cờ, nền menu chính)
+        load_assets()
 
-        # --- 2. Tải tài nguyên ---
-        load_assets() 
+        # 2. Khởi tạo UI Manager
+        self.ui_manager = pygame_gui.UIManager((WIDTH, HEIGHT), 'theme.json')
 
-        # --- 3. Khởi tạo UI Manager ---
-        self.ui_manager = pygame_gui.UIManager((WIDTH, HEIGHT), 'theme.json') 
-
-        # --- 4. Tạo các "màn hình" (Scenes) ---
+        # 3. Tạo TẤT CẢ các "màn hình" của game
+        # Các màn hình này sẽ được ẩn/hiện khi cần
         self.main_menu = MainMenu(self.screen, self.ui_manager)
         self.chess_menu = ChessMenu(self.screen, self.ui_manager)
         self.xiangqi_menu = XiangqiMenu(self.screen, self.ui_manager)
-        
-        self.login_label = None
-        self.login_text_entry = None
-        self.login_button = None
-        self.login_back_button = None
-        self.lobby_label = None
-        self.lobby_player_list = None
-        self.lobby_invite_button = None
-        self.lobby_back_button = None
-        self.game_screen: BoardUI | None = None
-        self.game_logic: Board | None = None
-        self.connecting_popup = None
-        self.invite_confirm_dialog = None
-        
+
+        self.game_screen = None  # Màn hình game chỉ được tạo khi vào trận
+
+        # label hiển thị khi đang tìm online
+        self.searching_label = None
+
+        # --- 4. TẠO CÁC NỀN CHUYỂN ĐỘNG ---
         self.chess_menu_background_animated = AnimatedBackground(
             WIDTH, HEIGHT,
-            square_size=80, scroll_speed=120, 
-            light_color=LIGHT_SQUARE_COLOR, dark_color=DARK_SQUARE_COLOR
+            square_size=80,
+            scroll_speed=120,
+            light_color=LIGHT_SQUARE_COLOR,
+            dark_color=DARK_SQUARE_COLOR
         )
+
         self.xiangqi_menu_background_animated = AnimatedBackground(
             WIDTH, HEIGHT,
-            square_size=80, scroll_speed=150,
-            light_color=XIANGQI_LIGHT_BACKGROUND_COLOR, dark_color=XIANGQI_DARK_BACKGROUND_COLOR
+            square_size=80,
+            scroll_speed=150,
+            light_color=XIANGQI_LIGHT_BACKGROUND_COLOR,
+            dark_color=XIANGQI_DARK_BACKGROUND_COLOR
         )
-        
-        # --- SỬA LỖI 1: Dùng custom_type() để tránh xung đột event với UI ---
-        try:
-            self.lobby_refresh_timer = pygame.event.custom_type()
-        except AttributeError:
-            # Fallback cho bản pygame cũ
-            self.lobby_refresh_timer = pygame.USEREVENT + 100 
+        # ------------------------------------
 
+        # 5. Đặt trạng thái game ban đầu
         self.state = 'MAIN_MENU'
-        self.main_menu.show() 
+        self.main_menu.show()  # Chỉ hiện menu chính lúc đầu
 
-    # --- UI HELPERS (Giữ nguyên) ---
-    def _show_login_screen(self):
-        self.login_label = UILabel(pygame.Rect((WIDTH//2-150, 150), (300, 50)), "Nhap ten cua ban", manager=self.ui_manager)
-        self.login_text_entry = UITextEntryBox(pygame.Rect((WIDTH//2-150, 210), (300, 50)), manager=self.ui_manager)
-        self.login_button = UIButton(pygame.Rect((WIDTH//2-100, 280), (200, 50)), "Dang Nhap", manager=self.ui_manager)
-        self.login_back_button = UIButton(pygame.Rect((WIDTH//2-100, 340), (200, 50)), "Quay Lai", manager=self.ui_manager)
-
-    def _hide_login_screen(self):
-        if self.login_label: self.login_label.kill()
-        if self.login_text_entry: self.login_text_entry.kill()
-        if self.login_button: self.login_button.kill()
-        if self.login_back_button: self.login_back_button.kill()
-        self.login_label = self.login_text_entry = self.login_button = self.login_back_button = None
-    
-    def _show_lobby(self):
-        self.lobby_label = UILabel(pygame.Rect((WIDTH//2-150, 50), (300, 50)), "Lobby - Online Players", manager=self.ui_manager)
-        self.lobby_player_list = UISelectionList(pygame.Rect((WIDTH//2-150, 110), (300, 300)), item_list=[], manager=self.ui_manager)
-        self.lobby_invite_button = UIButton(pygame.Rect((WIDTH//2-100, 420), (200, 50)), "Invite to Play", manager=self.ui_manager)
-        self.lobby_back_button = UIButton(pygame.Rect((WIDTH//2-100, 480), (200, 50)), "Back to Menu", manager=self.ui_manager)
-        self.network.send_to_matchmaker({"type": "get_lobby"})
-
-    def _hide_lobby(self):
-        if self.lobby_label: self.lobby_label.kill()
-        if self.lobby_player_list: self.lobby_player_list.kill()
-        if self.lobby_invite_button: self.lobby_invite_button.kill()
-        if self.lobby_back_button: self.lobby_back_button.kill()
-        self.lobby_label = self.lobby_player_list = self.lobby_invite_button = self.lobby_back_button = None
-
-    def _show_connecting_popup(self, text: str):
-        if self.connecting_popup: self.connecting_popup.kill()
-        self.connecting_popup = UIMessageWindow(
-            rect=pygame.Rect((WIDTH//2-150, HEIGHT//2-100), (300, 200)),
-            html_message=f"<p align='center'>{text}</p>",
-            manager=self.ui_manager, window_title="Connecting..."
-        )
-    
-    def _hide_connecting_popup(self):
-        if self.connecting_popup: self.connecting_popup.kill(); self.connecting_popup = None
-
-    def _process_network_queues(self):
-        # Matchmaker Queue
-        try:
-            while True:
-                server_cmd = self.network.server_queue.get_nowait()
-                if server_cmd['type'] == 'invited':
-                    self._hide_connecting_popup() 
-                    self.invite_from = server_cmd['from']
-                    self.invite_confirm_dialog = UIConfirmationDialog(
-                        rect=pygame.Rect((WIDTH//2-150, HEIGHT//2-100), (300, 200)),
-                        manager=self.ui_manager, window_title="Game Invite",
-                        action_long_desc=f"<b>{self.invite_from}</b> wants to play with you!",
-                        action_short_name="Accept", blocking=True
-                    )
-                elif server_cmd['type'] == 'lobby_list':
-                    if self.state == 'LOBBY' and self.lobby_player_list:
-                        current_items = [item['text'] for item in self.lobby_player_list.item_list]
-                        new_items = server_cmd['players']
-                        if current_items != new_items: self.lobby_player_list.set_item_list(new_items)
-                elif server_cmd['type'] == 'start_game':
-                    self.my_role = server_cmd.get('role')
-                    self.opponent_username = server_cmd.get('opponent_username', 'Opponent')
-                    self.state = 'CONNECTING_P2P'
-                    self._hide_lobby()
-                    self._hide_connecting_popup() 
-                    pygame.time.set_timer(self.lobby_refresh_timer, 0) 
-                    self._show_connecting_popup(f"Connecting to {self.opponent_username}...")
-                elif server_cmd['type'] == 'p2p_waiting':
-                    self._show_connecting_popup("Waiting for opponent to connect...")
-                elif server_cmd['type'] == 'p2p_connected':
-                    self._hide_connecting_popup()
-                    self.state = 'GAME_SCREEN'
-                    self.game_logic = Board(game_type='chess') 
-                    self.game_screen = BoardUI(self.screen, self.game_logic, CHESS_PIECES)
-                    print(f"GAME START! My role: {self.my_role}")
-                elif server_cmd['type'] == 'p2p_error':
-                    self.state = 'LOBBY'
-                    self._hide_connecting_popup()
-                    self._show_lobby()
-                    pygame.time.set_timer(self.lobby_refresh_timer, 3000)
-                elif server_cmd['type'] == 'disconnect':
-                    print("Lost connection to server")
-                    self.running = False
-        except queue.Empty: pass 
-
-        # P2P Queue
-        if self.state == 'GAME_SCREEN' and self.game_logic:
-            try:
-                while True:
-                    p2p_cmd = self.network.p2p_queue.get_nowait()
-                    if p2p_cmd['type'] == 'move':
-                        print(f"Opponent move: {p2p_cmd}") # TODO: Implement move
-                    elif p2p_cmd['type'] == 'disconnect':
-                        self.state = 'LOBBY'
-                        self.game_screen = None; self.game_logic = None
-                        self._show_lobby()
-                        pygame.time.set_timer(self.lobby_refresh_timer, 3000)
-            except queue.Empty: pass 
-
-    # --- HÀM RUN QUAN TRỌNG (ĐÃ SỬA) ---
+    # -------------------------
+    # Main loop
+    # -------------------------
     def run(self):
-        """Vòng lặp game chính."""
+        """Vòng lặp game chính (State Machine)."""
         while self.running:
+            # 1. Lấy time_delta (quan trọng cho FPS cao)
             time_delta = self.clock.tick(FPS) / 1000.0
+
+            # --- 2. XỬ LÝ SỰ KIỆN ---
             events = pygame.event.get()
-            
             for event in events:
                 if event.type == pygame.QUIT:
                     self.running = False
-                    continue
 
-                # 1. Xử lý Timer (Mạng)
-                if event.type == self.lobby_refresh_timer:
-                    if self.state == 'LOBBY':
-                        self.network.send_to_matchmaker({"type": "get_lobby"})
-                    continue # Bỏ qua các xử lý UI cho sự kiện này
-
-                # 2. Đưa sự kiện cho UI Manager (QUAN TRỌNG: Phải chạy trước logic nút bấm)
+                # Đưa sự kiện cho UI Manager
                 self.ui_manager.process_events(event)
-                
-                # 3. Xử lý Logic Nút bấm của App (Login/Lobby)
-                if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                    if event.ui_element == self.login_button:
-                        username = self.login_text_entry.get_text()
-                        if username:
-                            self.username = username; self.state = 'CONNECTING_MATCHMAKER'; self._hide_login_screen()
-                    elif event.ui_element == self.login_back_button:
-                        self.state = 'MAIN_MENU'; self._hide_login_screen(); self.main_menu.show()
-                    elif event.ui_element == self.lobby_invite_button:
-                        selected = self.lobby_player_list.get_single_selection()
-                        if selected:
-                            self.network.send_to_matchmaker({"type": "invite", "target": selected})
-                            self._show_connecting_popup(f"Inviting {selected}...")
-                    elif event.ui_element == self.lobby_back_button:
-                        self.state = 'MAIN_MENU'; self._hide_lobby(); self.main_menu.show()
-                        pygame.time.set_timer(self.lobby_refresh_timer, 0)
-                        try: self.network.shutdown()
-                        except: pass
 
-                # 4. Xử lý Confirm Dialog
-                if event.type == pygame_gui.UI_CONFIRMATION_DIALOG_CONFIRMED:
-                    if event.ui_element == self.invite_confirm_dialog:
-                        self.network.send_to_matchmaker({"type": "accept", "target": self.invite_from})
-                        self._show_connecting_popup(f"Accepting invite from {self.invite_from}...")
-                        self.invite_confirm_dialog = None
-                
-                # 5. Chuyển sự kiện cho các Menu con (Main Menu, Chess Menu...)
+                # Đưa sự kiện cho "cảnh" (state) hiện tại
                 if self.state == 'MAIN_MENU':
                     next_state = self.main_menu.handle_events(event)
-                    if next_state == 'QUIT': self.running = False
+                    if next_state == 'QUIT':
+                        self.running = False
                     elif next_state == 'PLAY_CHESS':
-                        self.main_menu.hide(); self.chess_menu.show(); self.state = 'CHESS_MENU'
+                        self.main_menu.hide()
+                        self.chess_menu.show()
+                        self.state = 'CHESS_MENU'
                     elif next_state == 'PLAY_XIANGQI':
-                        self.main_menu.hide(); self.xiangqi_menu.show(); self.state = 'XIANGQI_MENU'
-                    elif next_state == 'PLAY_ONLINE': 
-                        self.main_menu.hide(); self.state = 'LOGIN_SCREEN'; self._show_login_screen() 
-
+                        self.main_menu.hide()
+                        self.xiangqi_menu.show()
+                        self.state = 'XIANGQI_MENU'
+                    elif next_state == 'PLAY_ONLINE':
+                        # Bấm nút Chơi Online -> bắt đầu flow
+                        print("[App] PLAY_ONLINE được kích hoạt!")
+                        self.main_menu.hide()
+                        self._begin_online_search()
                 elif self.state == 'CHESS_MENU':
                     next_state = self.chess_menu.handle_events(event)
                     if next_state == 'BACK_TO_MAIN_MENU':
-                        self.chess_menu.hide(); self.main_menu.show(); self.state = 'MAIN_MENU'
+                        self.chess_menu.hide()
+                        self.main_menu.show()
+                        self.state = 'MAIN_MENU'
                     elif next_state == 'PLAY_CHESS_QUICK':
                         self.chess_menu.hide()
-                        self.game_logic = Board(game_type='chess') 
-                        self.game_screen = BoardUI(self.screen, self.game_logic, CHESS_PIECES)
+                        game_logic = Board(game_type='chess')
+                        board_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
+                        self.game_screen = BoardUI(self.screen, game_logic, CHESS_PIECES, board_rect)
                         self.state = 'GAME_SCREEN'
-
                 elif self.state == 'XIANGQI_MENU':
                     next_state = self.xiangqi_menu.handle_events(event)
                     if next_state == 'BACK_TO_MAIN_MENU':
-                        self.xiangqi_menu.hide(); self.main_menu.show(); self.state = 'MAIN_MENU'
+                        self.xiangqi_menu.hide()
+                        self.main_menu.show()
+                        self.state = 'MAIN_MENU'
                     elif next_state == 'PLAY_XIANGQI_QUICK':
                         self.xiangqi_menu.hide()
-                        self.game_logic = Board(game_type='chinese_chess')
-                        self.game_screen = BoardUI(self.screen, self.game_logic, XIANGQI_PIECES)
+                        game_logic = Board(game_type='chinese_chess')
+                        board_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
+                        self.game_screen = BoardUI(self.screen, game_logic, XIANGQI_PIECES, board_rect)
                         self.state = 'GAME_SCREEN'
+                elif self.state == 'GAME_SCREEN':
+                    if self.game_screen:
+                        self.game_screen.handle_events(event)
+                    # TODO: Thêm logic quay lại menu
+                elif self.state == 'SEARCHING':
+                    # Có thể muốn cho nút "Hủy" về menu, tạm không có
+                    pass
 
-                elif self.state == 'GAME_SCREEN' and self.game_screen:
-                    self.game_screen.handle_events(event) 
+            # --- 3. CẬP NHẬT LOGIC ---
+            self.ui_manager.update(time_delta)
 
-            # --- CẬP NHẬT UI (NẰM NGOÀI VÒNG LẶP FOR - QUAN TRỌNG) ---
-            self._process_network_queues()
-            
-            # Hàm này giúp nút bấm "sáng lên" khi di chuột
-            self.ui_manager.update(time_delta) 
-            
+            # Poll background online thread result (không block GUI)
+            self._poll_online_thread()
+
+            # Cập nhật nền chuyển động (nếu đang ở state đó)
             if self.state == 'GAME_SCREEN' and self.game_screen:
                 self.game_screen.update()
             elif self.state == 'CHESS_MENU':
                 self.chess_menu_background_animated.update(time_delta)
             elif self.state == 'XIANGQI_MENU':
                 self.xiangqi_menu_background_animated.update(time_delta)
-            
-            # Logic Connect (Non-blocking để UI không bị đơ)
-            elif self.state == 'CONNECTING_MATCHMAKER':
-                self._show_connecting_popup(f"Connecting... {self.username}")
-                if self.network.connect_to_matchmaker(self.server_ip, self.server_port, self.username):
-                    self.state = 'LOBBY'
-                    self._hide_connecting_popup()
-                    self._show_lobby()
-                    pygame.time.set_timer(self.lobby_refresh_timer, 3000)
-                else:
-                    self.state = 'LOGIN_SCREEN'
-                    self._hide_connecting_popup()
-                    self._show_login_screen()
 
-            # --- VẼ HÌNH ---
+            # --- 4. VẼ LÊN MÀN HÌNH ---
+            # 4a. Vẽ nền (background) tùy theo state
             if self.state == 'MAIN_MENU':
-                if MAIN_MENU_BACKGROUND: self.screen.blit(MAIN_MENU_BACKGROUND, (0, 0))
-                else: self.screen.fill((20, 20, 20))
+                if MAIN_MENU_BACKGROUND:
+                    self.screen.blit(MAIN_MENU_BACKGROUND, (0, 0))
+                else:
+                    self.screen.fill((20, 20, 20))
             elif self.state == 'CHESS_MENU':
                 self.chess_menu_background_animated.draw(self.screen)
             elif self.state == 'XIANGQI_MENU':
                 self.xiangqi_menu_background_animated.draw(self.screen)
             elif self.state == 'GAME_SCREEN' and self.game_screen:
                 self.game_screen.draw()
-            elif self.state in ['LOGIN_SCREEN', 'LOBBY', 'CONNECTING_MATCHMAKER', 'CONNECTING_P2P']:
-                self.screen.fill((50, 50, 50))
+            elif self.state == 'SEARCHING':
+                # Nếu bạn muốn, vẽ 1 background tối giản khi đang tìm
+                self.screen.fill((10, 10, 30))
 
+            # 4b. Vẽ các nút UI (luôn ở trên cùng)
             self.ui_manager.draw_ui(self.screen)
+
+            # 4c. Cập nhật màn hình
             pygame.display.flip()
-            
+
+        # End loop
         pygame.quit()
+
+    # -------------------------
+    # Online flow helpers
+    # -------------------------
+    def _begin_online_search(self):
+        """Chuẩn bị UI và start thread tìm đối thủ online (LAN -> Web)."""
+        # Hiện label "Đang tìm đối thủ..."
+        if self.searching_label is None:
+            self.searching_label = pygame_gui.elements.UILabel(
+                relative_rect=pygame.Rect((WIDTH // 2 - 150, HEIGHT // 2 - 20), (300, 40)),
+                text="Đang tìm đối thủ... Vui lòng chờ",
+                manager=self.ui_manager
+            )
+        else:
+            self.searching_label.show()
+
+        self.state = 'SEARCHING'
+        self._online_result = None
+        self._online_error = None
+        self._online_connected = False
+
+        # Start background thread (không block UI)
+        self._online_thread = threading.Thread(target=self._online_search_and_connect, daemon=True)
+        self._online_thread.start()
+
+    def _online_search_and_connect(self):
+        """
+        Chạy trong thread nền:
+         1) gọi network_manager.find_opponent(username)
+         2) nếu tìm được -> gọi network_manager.connect_to_peer(ip, port)
+         3) set flags tương ứng để main loop xử lý chuyển trạng thái
+        """
+        # username tạm (bạn có thể lấy từ UI)
+        username = "Player1"
+
+        # 1) find opponent (LAN ưu tiên, rồi web)
+        try:
+            print("[OnlineThread] Gọi find_opponent...")
+            # Prefer NetworkManager.find_opponent if exists
+            find_fn = getattr(self.network_manager, "find_opponent", None)
+            if callable(find_fn):
+                res = find_fn(username)
+            else:
+                # fallback: import từ network package
+                try:
+                    from network import find_opponent as net_find  # network/__init__.py
+                    res = net_find(username)
+                except Exception as e:
+                    res = None
+                    print("[OnlineThread] Không có hàm find_opponent:", e)
+
+            if not res:
+                self._online_error = "Không tìm thấy đối thủ (LAN/Web)."
+                print("[OnlineThread]", self._online_error)
+                return
+            ip, port = res
+            if port is None:
+                # dùng port mặc định nếu đối phương không gửi port
+                # lấy từ server_port đã truyền vào App (main.py)
+                port = self.server_port or 12345
+            self._online_result = (ip, port)
+            print("[OnlineThread] Tìm thấy đối thủ:", self._online_result)
+
+            # 2) Thực hiện kết nối P2P (NetworkManager chịu trách nhiệm)
+            connect_fn = getattr(self.network_manager, "connect_to_peer", None)
+            if callable(connect_fn):
+                ok = connect_fn(ip, port)
+            else:
+                # fallback: nếu NetworkManager có _initiate_p2p_connection (your earlier code)
+                init_fn = getattr(self.network_manager, "_initiate_p2p_connection", None)
+                if callable(init_fn):
+                    # note: signature might be (role, ip, port, opponent_username) in your class
+                    # we try to call as client by default
+                    try:
+                        # attempt to act as client
+                        init_fn(role='client', opponent_ip=ip, port=port, opponent_username="Opponent")
+                        ok = True
+                    except Exception as e:
+                        print("[OnlineThread] fallback connect error:", e)
+                        ok = False
+                else:
+                    ok = False
+
+            if ok:
+                self._online_connected = True
+                print("[OnlineThread] Kết nối P2P thành công")
+            else:
+                self._online_error = "Kết nối P2P thất bại."
+                print("[OnlineThread] Kết nối P2P thất bại")
+
+        except Exception as e:
+            self._online_error = f"Lỗi khi tìm/kết nối: {e}"
+            print("[OnlineThread] Exception:", e)
+
+    def _poll_online_thread(self):
+        """Kiểm tra kết quả từ thread nền và cập nhật UI / state nếu cần."""
+        # Nếu thread không tồn tại hoặc vẫn đang chạy -> nothing
+        if self._online_thread and self._online_thread.is_alive():
+            return
+
+        # Nếu có lỗi xảy ra
+        if self._online_error:
+            # Ẩn label searching
+            if self.searching_label:
+                self.searching_label.hide()
+            # Hiện thông báo lỗi (popup)
+            pygame_gui.windows.UIMessageWindow(
+                rect=pygame.Rect(WIDTH // 2 - 200, HEIGHT // 2 - 80, 400, 160),
+                html_message=self._online_error,
+                manager=self.ui_manager,
+                window_title="Lỗi kết nối"
+            )
+            # Quay về menu chính
+            self._online_thread = None
+            self._online_result = None
+            self._online_error = None
+            self.state = 'MAIN_MENU'
+            self.main_menu.show()
+            return
+
+        # Nếu đã kết nối thành công
+        if self._online_connected and self._online_result:
+            # Ẩn label searching
+            if self.searching_label:
+                self.searching_label.hide()
+
+            ip, port = self._online_result
+            # Tạo BoardUI (ở đây mặc định chess, bạn có thể điều chỉnh)
+            try:
+                game_logic = Board(game_type='chess')
+                board_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
+                self.game_screen = BoardUI(self.screen, game_logic, CHESS_PIECES, board_rect)
+            except Exception as e:
+                print("[App] Lỗi tạo BoardUI:", e)
+
+            # chuyển state vào game
+            self.state = 'GAME_SCREEN'
+
+            # reset flags
+            self._online_thread = None
+            self._online_result = None
+            self._online_error = None
+            self._online_connected = False
+            return
+
+        # Nếu thread đã kết thúc nhưng không có kết quả -> quay lại menu
+        if self._online_thread and not self._online_thread.is_alive() and not (self._online_connected or self._online_error):
+            # Hơi hiếm, nhưng reset state
+            if self.searching_label:
+                self.searching_label.hide()
+            self._online_thread = None
+            self.state = 'MAIN_MENU'
+            self.main_menu.show()
+
