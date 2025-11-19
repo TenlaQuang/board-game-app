@@ -1,4 +1,4 @@
-# network/network_manager.py (FIX LỖI TIMEOUT)
+# network/network_manager.py (FIXED P2P LOGIC)
 import socket
 import threading
 import queue
@@ -21,6 +21,9 @@ class NetworkManager:
         self._polling = False
         self._poll_callback = None
         self.is_host = False 
+        
+        # Biến mới để lưu trữ IP Radmin/LAN của chính máy này
+        self.local_radmin_ip = web_matchmaking.get_radmin_ip() 
 
     # --- 1. HOSTING ---
     def start_hosting_phase(self) -> int:
@@ -44,9 +47,8 @@ class NetworkManager:
             conn, addr = self._listen_socket.accept()
             print(f"[NET] Có kết nối đến từ {addr}")
             
-            # --- FIX 1: Đảm bảo socket Host không bị timeout ---
+            # Đảm bảo socket Host không bị timeout
             conn.settimeout(None) 
-            # ---------------------------------------------------
 
             if self.p2p_socket is None:
                 self.p2p_socket = conn
@@ -57,14 +59,16 @@ class NetworkManager:
         except: pass
 
     # --- 2. WEB SERVER ---
+    # Cần sửa lại hàm này để gửi IP Radmin lên server (sử dụng logic trong web_matchmaking.py)
     def create_room_on_server(self):
         if not self._listening_port: return None
-        return web_matchmaking.create_room_online(self.username, self._listening_port)
+        # web_matchmaking.create_room_online sẽ tự gọi get_radmin_ip() và gửi lên server.
+        return web_matchmaking.create_room_online(self.username, self._listening_port, self.local_radmin_ip)
 
     def join_room_on_server(self, rid):
         return web_matchmaking.join_room_online(self.username, rid)
 
-    # --- 3. POLLING ---
+    # --- 3. POLLING (GIỮ NGUYÊN) ---
     def start_polling_users(self, callback):
         self._polling = True
         self._poll_callback = callback
@@ -83,43 +87,51 @@ class NetworkManager:
                 except: pass
             time.sleep(3)
 
-    # --- 4. CLIENT CONNECT ---
+    # --- 4. CLIENT CONNECT (ĐÃ SỬA CHUỖI THỬ NGHIỆM IP) ---
     def connect_to_peer(self, ip, port):
         if self.p2p_socket: return True
         print(f"[NET] Đang kết nối tới {ip}:{port}...")
 
-        def try_connect(target_ip, target_port):
+        # Hàm con để thử kết nối
+        def try_connect(target_ip, target_port, label):
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(3.0) # Chỉ timeout lúc đang tìm
+                sock.settimeout(3.0) 
                 sock.connect((target_ip, target_port))
                 
-                # --- FIX 2: KẾT NỐI XONG LÀ BỎ TIMEOUT NGAY ---
                 sock.settimeout(None) 
-                # ----------------------------------------------
-
+                
                 self.p2p_socket = sock
                 self.is_host = False
                 self._start_p2p_listener()
+                print(f"[NET] Kết nối {label} thành công!")
                 return True
             except Exception as e:
-                print(f"[NET] Kết nối {target_ip} thất bại: {e}")
+                print(f"[NET] Kết nối {label} thất bại.")
                 return False
 
-        # 1. Thử IP Public
-        if try_connect(ip, port):
-            print("[NET] Kết nối Public IP thành công!")
-            return True
+        # 1. Thử IP Radmin/LAN (IP ưu tiên mà Server trả về)
+        if self.local_radmin_ip:
+            # Nếu ta có IP Radmin, ta ưu tiên thử kết nối qua nó vì Radmin/LAN luôn là ưu tiên hàng đầu.
+            # Ta giả định IP trả về là IP Radmin của đối thủ.
+            if try_connect(ip, port, "RADMIN/LAN"):
+                return True
         
-        # 2. Thử Localhost (nếu cùng máy)
-        print("[NET] Đang thử Localhost...")
-        if try_connect('127.0.0.1', port):
-            print("[NET] Kết nối Localhost thành công!")
+        # 2. Thử lại với IP công cộng (Nếu không có Radmin, thử Public IP)
+        # Nếu IP trả về không phải Radmin (bị None), ta thử lại với IP đó (Public IP).
+        if not self.local_radmin_ip:
+            if try_connect(ip, port, "PUBLIC IP"):
+                return True
+
+        # 3. Thử Localhost (Chỉ dành cho test trên 1 máy, không liên quan đến Radmin)
+        # Giữ lại để bạn test local nếu muốn, nhưng không nên là ưu tiên chính.
+        if try_connect('127.0.0.1', port, "LOCALHOST"):
             return True
-            
+
+        print(f"[NET] Kết nối thất bại hoàn toàn. (Kiểm tra kết nối Radmin/Firewall)")
         return False
 
-    # --- 5. LISTENER ---
+    # --- 5. LISTENER (GIỮ NGUYÊN) ---
     def _start_p2p_listener(self):
         if not self.p2p_listener_thread or not self.p2p_listener_thread.is_alive():
             self.p2p_listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
@@ -128,7 +140,6 @@ class NetworkManager:
     def _listen_loop(self):
         try:
             while self.p2p_socket:
-                # Bây giờ recv sẽ đợi mãi mãi cho đến khi có data, không bị ngắt sau 3s nữa
                 data = self.p2p_socket.recv(1024).decode('utf-8')
                 if not data: break
                 buffer = data
@@ -154,23 +165,3 @@ class NetworkManager:
             if self._listen_socket: self._listen_socket.close()
             if self.p2p_socket: self.p2p_socket.close()
         except: pass
-
-        # Trong network/network_manager.py
-
-    def _poll_loop(self):
-        while self._polling:
-            if self._listening_port:
-                web_matchmaking.send_heartbeat(self.username, self._listening_port)
-            
-            # 1. Lấy danh sách user
-            users = web_matchmaking.get_online_users()
-            
-            # 2. (MỚI) Kiểm tra lời mời
-            invite = web_matchmaking.check_invite_online(self.username)
-            
-            if self._poll_callback:
-                try: 
-                    # Truyền cả users và invite về cho UI
-                    self._poll_callback(users, invite)
-                except: pass
-            time.sleep(3)
