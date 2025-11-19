@@ -44,6 +44,7 @@ class App:
         
         self.online_menu = None
         if OnlineMenu:
+            # Truyền network_manager vào OnlineMenu
             self.online_menu = OnlineMenu(self.screen, self.ui_manager, self.network_manager)
 
         self.game_screen = None
@@ -116,7 +117,7 @@ class App:
                             self.online_menu.show()
                             self.state = 'ONLINE_MENU'
 
-                # --- ONLINE MENU (ĐOẠN BẠN YÊU CẦU SỬA) ---
+                # --- ONLINE MENU ---
                 elif self.state == 'ONLINE_MENU':
                     if self.online_menu:
                         # Cập nhật cho menu biết đang chơi game gì để gửi lên Server
@@ -135,6 +136,7 @@ class App:
                                 self.state = 'XIANGQI_MENU'
                         
                         # KHI KẾT NỐI THÀNH CÔNG -> VÀO GAME
+                        # Kiểm tra xem socket P2P đã kết nối chưa
                         if self.network_manager.p2p_socket:
                             print(f">>> VÀO GAME ONLINE ({self.selected_game_type}) <<<")
                             self.online_menu.hide()
@@ -149,6 +151,7 @@ class App:
             # --- DRAW ---
             self.ui_manager.update(time_delta)
             
+            # Vẽ Background
             if self.state == 'MAIN_MENU':
                 if MAIN_MENU_BACKGROUND: self.screen.blit(MAIN_MENU_BACKGROUND, (0, 0))
                 else: self.screen.fill((30, 30, 30))
@@ -160,14 +163,17 @@ class App:
                 self.xiangqi_bg.update(time_delta); self.xiangqi_bg.draw(self.screen)
                 
             elif self.state == 'ONLINE_MENU':
-                self.screen.fill((20, 25, 40))
+                self.screen.fill((20, 25, 40)) # Màu nền cho sảnh online
                 
             elif self.state == 'GAME_SCREEN' and self.game_screen:
+                # Game Screen tự cập nhật (nếu có animation) và tự vẽ
+                self.game_screen.update() 
                 self.game_screen.draw()
 
             self.ui_manager.draw_ui(self.screen)
             pygame.display.flip()
 
+        # Khi thoát
         self.network_manager.shutdown()
         pygame.quit()
 
@@ -182,12 +188,19 @@ class App:
         
         if online:
             net_mgr = self.network_manager
+            # Xác định vai trò Host/Client để set màu quân
             role = 'host' if self.network_manager.is_host else 'client'
         
+        # --- [FIX] TẠO BOARD_RECT ---
+        # Hình chữ nhật bao quanh bàn cờ, hiện tại lấy full màn hình
+        board_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
+        
+        # Khởi tạo BoardUI với đầy đủ tham số
         self.game_screen = BoardUI(
             self.screen, 
             game_logic, 
             pieces_img, 
+            board_rect,          # <-- Đã thêm tham số này
             network_manager=net_mgr,
             my_role=role
         )
