@@ -1,10 +1,10 @@
-# network/network_manager.py (FIXED P2P LOGIC)
 import socket
 import threading
 import queue
 import json
 import time
 
+# Cố gắng import module web_matchmaking (nếu có)
 try:
     from . import web_matchmaking
 except ImportError:
@@ -23,8 +23,11 @@ class NetworkManager:
         self.is_host = False 
         self.current_lobby_state = "menu"
         
-        # Biến mới để lưu trữ IP Radmin/LAN của chính máy này
-        self.local_radmin_ip = web_matchmaking.get_radmin_ip() 
+        # Biến lưu trữ IP Radmin/LAN của chính máy này
+        try:
+            self.local_radmin_ip = web_matchmaking.get_radmin_ip()
+        except:
+            self.local_radmin_ip = None
 
     # --- 1. HOSTING ---
     def start_hosting_phase(self) -> int:
@@ -48,7 +51,6 @@ class NetworkManager:
             conn, addr = self._listen_socket.accept()
             print(f"[NET] Có kết nối đến từ {addr}")
             
-            # Đảm bảo socket Host không bị timeout
             conn.settimeout(None) 
 
             if self.p2p_socket is None:
@@ -60,16 +62,14 @@ class NetworkManager:
         except: pass
 
     # --- 2. WEB SERVER ---
-    # Cần sửa lại hàm này để gửi IP Radmin lên server (sử dụng logic trong web_matchmaking.py)
     def create_room_on_server(self):
         if not self._listening_port: return None
-        # web_matchmaking.create_room_online sẽ tự gọi get_radmin_ip() và gửi lên server.
         return web_matchmaking.create_room_online(self.username, self._listening_port, self.local_radmin_ip)
 
     def join_room_on_server(self, rid):
         return web_matchmaking.join_room_online(self.username, rid)
 
-    # --- 3. POLLING (GIỮ NGUYÊN) ---
+    # --- 3. POLLING ---
     def start_polling_users(self, callback):
         self._polling = True
         self._poll_callback = callback
@@ -78,48 +78,34 @@ class NetworkManager:
     def stop_polling_users(self):
         self._polling = False
 
-    # Trong network/network_manager.py
-
     def _poll_loop(self):
         while self._polling:
-            try: # <--- BẮT ĐẦU KHỐI CHỐNG CRASH
+            try:
                 if self._listening_port:
-                    # MỚI: Gửi self.current_lobby_state lên server
-                    web_matchmaking.send_heartbeat(
-                        self.username, 
-                        self._listening_port, 
-                        self.current_lobby_state
-                    )
+                    web_matchmaking.send_heartbeat(self.username, self._listening_port)
                 
-                # Lấy danh sách user và kiểm tra lời mời
                 users = web_matchmaking.get_online_users()
                 invite = web_matchmaking.check_invite_online(self.username)
                 
                 if self._poll_callback:
-                    # Truyền kết quả về UI
                     self._poll_callback(users, invite)
                     
             except Exception as e:
-                # Nếu có lỗi (Ví dụ: mạng lag quá, không lấy được IP Radmin,...)
-                print(f"[NET] POLLING THREAD RECOVERED FROM ERROR: {e}")
-                # Đợi lâu hơn một chút trước khi thử lại
+                print(f"[NET] Polling Error (Recovered): {e}")
                 time.sleep(5) 
-                
-            # Thời gian chờ giữa các lần poll thành công
+            
             time.sleep(3)
 
-    # --- 4. CLIENT CONNECT (ĐÃ SỬA CHUỖI THỬ NGHIỆM IP) ---
+    # --- 4. CLIENT CONNECT ---
     def connect_to_peer(self, ip, port):
         if self.p2p_socket: return True
         print(f"[NET] Đang kết nối tới {ip}:{port}...")
 
-        # Hàm con để thử kết nối
         def try_connect(target_ip, target_port, label):
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(3.0) 
                 sock.connect((target_ip, target_port))
-                
                 sock.settimeout(None) 
                 
                 self.p2p_socket = sock
@@ -131,28 +117,24 @@ class NetworkManager:
                 print(f"[NET] Kết nối {label} thất bại.")
                 return False
 
-        # 1. Thử IP Radmin/LAN (IP ưu tiên mà Server trả về)
+        # 1. Thử IP Radmin/LAN
         if self.local_radmin_ip:
-            # Nếu ta có IP Radmin, ta ưu tiên thử kết nối qua nó vì Radmin/LAN luôn là ưu tiên hàng đầu.
-            # Ta giả định IP trả về là IP Radmin của đối thủ.
             if try_connect(ip, port, "RADMIN/LAN"):
                 return True
         
-        # 2. Thử lại với IP công cộng (Nếu không có Radmin, thử Public IP)
-        # Nếu IP trả về không phải Radmin (bị None), ta thử lại với IP đó (Public IP).
+        # 2. Thử Public IP (nếu IP trả về khác Radmin)
         if not self.local_radmin_ip:
             if try_connect(ip, port, "PUBLIC IP"):
                 return True
 
-        # 3. Thử Localhost (Chỉ dành cho test trên 1 máy, không liên quan đến Radmin)
-        # Giữ lại để bạn test local nếu muốn, nhưng không nên là ưu tiên chính.
+        # 3. Thử Localhost (Test)
         if try_connect('127.0.0.1', port, "LOCALHOST"):
             return True
 
-        print(f"[NET] Kết nối thất bại hoàn toàn. (Kiểm tra kết nối Radmin/Firewall)")
+        print(f"[NET] Kết nối thất bại hoàn toàn.")
         return False
 
-    # --- 5. LISTENER (GIỮ NGUYÊN) ---
+    # --- 5. LISTENER & SENDING ---
     def _start_p2p_listener(self):
         if not self.p2p_listener_thread or not self.p2p_listener_thread.is_alive():
             self.p2p_listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
@@ -177,8 +159,30 @@ class NetworkManager:
 
     def send_to_p2p(self, data):
         if self.p2p_socket:
-            try: self.p2p_socket.sendall((json.dumps(data)+"\n").encode('utf-8'))
+            try: 
+                # Thêm ký tự xuống dòng \n để phân tách các gói tin JSON
+                self.p2p_socket.sendall((json.dumps(data)+"\n").encode('utf-8'))
             except: pass
+
+    # ==============================================================
+    # [NEW] CÁC HÀM HỖ TRỢ SIDEBAR (CHAT & COMMAND)
+    # ==============================================================
+    def send_chat(self, message):
+        """Gửi tin nhắn chat cho đối thủ"""
+        payload = {
+            "type": "chat",
+            "content": message
+        }
+        self.send_to_p2p(payload)
+
+    def send_command(self, command):
+        """Gửi lệnh (RESIGN, DRAW_OFFER, vv)"""
+        payload = {
+            "type": "command",
+            "content": command
+        }
+        self.send_to_p2p(payload)
+    # ==============================================================
 
     def shutdown(self):
         self._polling = False

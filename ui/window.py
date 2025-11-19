@@ -14,6 +14,7 @@ from .board_ui import BoardUI
 from .chess_menu import ChessMenu      
 from .xiangqi_menu import XiangqiMenu 
 from .animated_background import AnimatedBackground
+from core.game_state import GameState
 
 try:
     from .online_menu import OnlineMenu
@@ -47,8 +48,6 @@ class App:
             self.online_menu = OnlineMenu(self.screen, self.ui_manager, self.network_manager)
 
         self.game_screen = None
-        
-        # Biến lưu loại game đang chọn
         self.selected_game_type = 'chess' 
 
         # Backgrounds
@@ -67,24 +66,14 @@ class App:
                 if event.type == pygame.QUIT: self.running = False
                 self.ui_manager.process_events(event)
 
-                # --- MAIN MENU ---
                 if self.state == 'MAIN_MENU':
                     action = self.main_menu.handle_events(event)
                     if action == 'QUIT': self.running = False
-                    
                     elif action == 'GOTO_CHESS_MENU':
-                        self.main_menu.hide()
-                        self.chess_menu.show()
-                        self.selected_game_type = 'chess'
-                        self.state = 'CHESS_MENU'
-                        
+                        self.main_menu.hide(); self.chess_menu.show(); self.selected_game_type = 'chess'; self.state = 'CHESS_MENU'
                     elif action == 'GOTO_XIANGQI_MENU':
-                        self.main_menu.hide()
-                        self.xiangqi_menu.show()
-                        self.selected_game_type = 'chinese_chess'
-                        self.state = 'XIANGQI_MENU'
+                        self.main_menu.hide(); self.xiangqi_menu.show(); self.selected_game_type = 'chinese_chess'; self.state = 'XIANGQI_MENU'
 
-                # --- CHESS/XIANGQI MENU HANDLERS ---
                 elif self.state == 'CHESS_MENU':
                     action = self.chess_menu.handle_events(event)
                     if action == 'BACK_TO_MAIN':
@@ -92,7 +81,7 @@ class App:
                     elif action == 'PLAY_OFFLINE':
                         self.chess_menu.hide(); self._start_game_session('chess', online=False) 
                     elif action == 'PLAY_ONLINE':
-                        self.chess_menu.hide()
+                        self.chess_menu.hide(); 
                         if self.online_menu: self.online_menu.show(); self.state = 'ONLINE_MENU'
 
                 elif self.state == 'XIANGQI_MENU':
@@ -102,55 +91,40 @@ class App:
                     elif action == 'PLAY_OFFLINE': 
                         self.xiangqi_menu.hide(); self._start_game_session('chinese_chess', online=False)
                     elif action == 'PLAY_ONLINE': 
-                        self.xiangqi_menu.hide()
+                        self.xiangqi_menu.hide(); 
                         if self.online_menu: self.online_menu.show(); self.state = 'ONLINE_MENU'
 
-                # --- ONLINE MENU ---
                 elif self.state == 'ONLINE_MENU':
                     if self.online_menu:
-                        # Cập nhật cho menu biết đang chơi game gì để gửi lên Server
                         self.online_menu.current_game_type = self.selected_game_type
-                        self.network_manager.current_lobby_state = self.selected_game_type
-                        
                         action = self.online_menu.handle_events(event)
                         action = self.online_menu.handle_events(event)
                         
-                        # Xử lý nút BACK
                         if action == 'BACK':
                             self.online_menu.hide()
-                            if self.selected_game_type == 'chess':
-                                self.chess_menu.show()
-                                self.state = 'CHESS_MENU'
-                            else:
-                                self.xiangqi_menu.show()
-                                self.state = 'XIANGQI_MENU'
+                            if self.selected_game_type == 'chess': self.chess_menu.show(); self.state = 'CHESS_MENU'
+                            else: self.xiangqi_menu.show(); self.state = 'XIANGQI_MENU'
                         
-                        # KHI KẾT NỐI THÀNH CÔNG -> VÀO GAME
                         if self.network_manager.p2p_socket:
                             print(f">>> VÀO GAME ONLINE ({self.selected_game_type}) <<<")
                             self.online_menu.hide()
                             self._start_game_session(self.selected_game_type, online=True)
 
-                # --- GAME SCREEN ---
                 elif self.state == 'GAME_SCREEN':
                     if self.game_screen:
                         self.game_screen.handle_events(event)
 
-            # --- DRAW ---
             self.ui_manager.update(time_delta)
             
-            # Cập nhật/Vẽ nền
             if self.state == 'MAIN_MENU':
                 if MAIN_MENU_BACKGROUND: self.screen.blit(MAIN_MENU_BACKGROUND, (0, 0))
                 else: self.screen.fill((30, 30, 30))
-            
             elif self.state == 'CHESS_MENU':
                 self.chess_bg.update(time_delta); self.chess_bg.draw(self.screen)
             elif self.state == 'XIANGQI_MENU':
                 self.xiangqi_bg.update(time_delta); self.xiangqi_bg.draw(self.screen)
             elif self.state == 'ONLINE_MENU':
                 self.screen.fill((20, 25, 40))
-                
             elif self.state == 'GAME_SCREEN' and self.game_screen:
                 self.game_screen.update() 
                 self.game_screen.draw()
@@ -162,28 +136,32 @@ class App:
         pygame.quit()
 
     def _start_game_session(self, game_type, online=False):
-        """Helper để khởi tạo màn chơi (Đã sửa lỗi tham số cho BoardUI)"""
         pieces_img = CHESS_PIECES if game_type == 'chess' else XIANGQI_PIECES
-        game_logic = Board(game_type=game_type)
         
-        # Xử lý Online / Offline
+        # --- [FIX] SỬ DỤNG GAMESTATE THAY VÌ BOARD ---
+        # GameState sẽ quản lý cả Board và Lượt đi (current_turn)
+        game_logic = GameState(game_type=game_type) 
+        # ---------------------------------------------
+        
         net_mgr = None
         role = None
         
         if online:
             net_mgr = self.network_manager
-            # Xác định vai trò Host/Client để set màu quân
             role = 'host' if self.network_manager.is_host else 'client'
         
-        # TẠO HÌNH CHỮ NHẬT BAO QUANH BÀN CỜ
-        board_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
+        SIDEBAR_WIDTH = 320
+        BOARD_WIDTH = WIDTH - SIDEBAR_WIDTH
         
-        # Khởi tạo BoardUI với đầy đủ tham số (Giả định BoardUI đã được update)
+        board_rect = pygame.Rect(0, 0, BOARD_WIDTH, HEIGHT)
+        sidebar_rect = pygame.Rect(BOARD_WIDTH, 0, SIDEBAR_WIDTH, HEIGHT)
+        
         self.game_screen = BoardUI(
             self.screen, 
             game_logic, 
             pieces_img, 
-            board_rect,          
+            board_rect, 
+            sidebar_rect=sidebar_rect,
             network_manager=net_mgr,
             my_role=role
         )
