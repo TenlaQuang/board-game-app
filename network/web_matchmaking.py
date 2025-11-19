@@ -10,26 +10,29 @@ WEB_SERVER = "https://board-game-app-sv.onrender.com"
 # ==========================
 # LẤY IP RADMIN VPN (Windows)
 # ==========================
+# Trong network/web_matchmaking.py
+
 def get_radmin_ip() -> Optional[str]:
-    """Tìm IP của card mạng Radmin VPN để bypass NAT."""
+    """Tìm IP Radmin bằng cách quét dải IP 26.x.x.x trong output ipconfig."""
     try:
         # Chạy lệnh ipconfig
         output = subprocess.check_output("ipconfig", shell=True, encoding="utf8")
 
-        # Tìm section Radmin
-        sections = output.split("\n\n")
+        # FIX: Trực tiếp tìm kiếm IP dạng 26.x.x.x trong toàn bộ output
+        # Regex tìm: "IPv4 Address" + [khoảng trắng/ký tự] + IP bắt đầu bằng 26.
+        match = re.search(
+            r"IPv4 Address[^\:]*: (26\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})", 
+            output
+        )
+        if match:
+            # Trả về IP (ví dụ: 26.24.235.145)
+            return match.group(1).strip()
 
-        for sec in sections:
-            if "Radmin" in sec or "Radmin VPN" in sec:
-                # Tìm IP dạng IPv4
-                match = re.search(r"IPv4 Address[^\:]*: ([0-9\.]+)", sec)
-                if match:
-                    return match.group(1).strip()
-
-    except:
+    except Exception as e:
+        # Lỗi nếu ipconfig không chạy được
         pass
 
-    return None  # Không tìm thấy Radmin
+    return None # Trả về None nếu không tìm thấy IP Radmin
 
 
 # ==========================
