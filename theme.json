@@ -1,6 +1,6 @@
 {
     "font": {
-        "regular_path": "ui/assets/fonts/font_vi.ttf",
+        "regular_path": "ui/assets/fonts/Roboto-Regular.ttf",
         "bold_path": "ui/assets/fonts/font_vi.ttf",
         "italic_path": "ui/assets/fonts/font_vi.ttf",
         "bold_italic_path": "ui/assets/fonts/font_vi.ttf"
