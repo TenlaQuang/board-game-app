@@ -60,25 +60,35 @@ class GameState:
             # Lưu lịch sử
             self.history.append({'from': from_pos, 'to': to_pos})
             
-            # Di chuyển
+            # Xác định quân bị ăn (nếu có)
             captured = self.board.get_piece(to_pos)
+            
+            # Di chuyển quân cờ
             self.board.move_piece(from_pos, to_pos)
+
+            # --- [NEW] LOGIC ĂN VUA LÀ THẮNG LUÔN ---
+            # Kiểm tra nếu quân bị ăn là Vua (King) hoặc Tướng (General)
+            if captured and captured.type.lower() in ['king', 'general']:
+                self.winner = self.current_turn
+                return True
+            # ----------------------------------------
 
             # Xử lý đặc biệt (promotion, castling, en passant) - thêm sau nếu cần
 
-            # Kiểm tra check/checkmate
-            self.is_check = self.validator.is_in_check(self.board, self.opponent_color())
-            self.is_checkmate = self.is_check and self.validator.is_checkmate(self.board, self.opponent_color())
+            # Kiểm tra check/checkmate (Logic chuẩn)
+            # Nếu chưa thắng do ăn vua, thì kiểm tra xem có chiếu bí không
+            if not self.winner:
+                self.is_check = self.validator.is_in_check(self.board, self.opponent_color())
+                self.is_checkmate = self.is_check and self.validator.is_checkmate(self.board, self.opponent_color())
 
-            if self.is_checkmate:
-                self.winner = self.current_turn
+                if self.is_checkmate:
+                    self.winner = self.current_turn
 
             # Đổi lượt
             self.current_turn = self.opponent_color()
             return True
         
         return False
-
     def opponent_color(self) -> str:
         return 'black' if self.current_turn == 'white' else 'white'
 

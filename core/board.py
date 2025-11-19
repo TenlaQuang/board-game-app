@@ -1,5 +1,4 @@
 from typing import List, Tuple, Optional
-# Import các quân cờ (đảm bảo file piece.py của bạn vẫn như cũ)
 from core.piece import (
     Piece, Pawn, Rook, Knight, Bishop, Queen, King,
     General, Advisor, Elephant, Horse, Chariot, Cannon, Soldier
@@ -10,10 +9,14 @@ class Board:
         self.game_type = game_type
         self.board: List[List[Optional[Piece]]] = []
         
-        # --- [NEW] LOGIC ONLINE & LƯỢT CHƠI ---
+        # --- LOGIC ONLINE & LƯỢT CHƠI ---
         self.turn = 'white'   # Lượt hiện tại ('white' hoặc 'black')
         self.my_color = None  # Màu của người chơi trên máy này
-        # --------------------------------------
+        
+        # --- TRẠNG THÁI WIN/LOSS ---
+        self.winner = None    # 'white', 'black', hoặc None
+        self.game_over = False
+        # ----------------------------------
 
         if self.game_type == 'chess':
             self.rows, self.cols = 8, 8
@@ -76,14 +79,13 @@ class Board:
                     state[r][c] = piece.symbol
         return state
 
-    # --- [NEW] LOGIC ONLINE & LƯỢT CHƠI ---
+    # --- LOGIC ONLINE & LƯỢT CHƠI ---
     def set_player_color(self, color: str):
         """Thiết lập màu cho người chơi này."""
         self.my_color = color
 
     def is_my_turn(self) -> bool:
         """Kiểm tra có phải lượt của mình không."""
-        # Nếu chưa set màu (chơi offline), luôn cho phép đi
         if self.my_color is None:
             return True
         return self.turn == self.my_color
@@ -93,20 +95,36 @@ class Board:
         self.turn = 'black' if self.turn == 'white' else 'white'
 
     def move_piece(self, from_pos: Tuple[int, int], to_pos: Tuple[int, int]):
-        """Di chuyển quân cờ và đổi lượt."""
+        """Di chuyển quân cờ, kiểm tra ăn Vua và đổi lượt."""
+        if self.game_over: 
+            return 
+        
         from_row, from_col = from_pos
         to_row, to_col = to_pos
         
         piece = self.get_piece(from_pos)
+        target_piece = self.get_piece(to_pos)
         
         if piece:
+            # --- [SỬA] KIỂM TRA ĂN VUA/TƯỚNG (WIN CONDITION) ---
+            if target_piece:
+                # K/k = King (Vua), G/g = General (Tướng)
+                if target_piece.symbol.upper() in ['K', 'G']:
+                    self.winner = self.turn # Người đang đi là người thắng
+                    self.game_over = True
+                    print(f"GAME OVER! {self.turn.upper()} thắng!")
+            # ---------------------------------------------------
+
             # Di chuyển quân
             self.board[to_row][to_col] = piece
             self.board[from_row][from_col] = None
             piece.has_moved = True
             
-            # Đổi lượt
-            self.switch_turn()
-            print(f"Đã đi từ {from_pos} đến {to_pos}. Lượt tiếp theo: {self.turn}")
+            # Chỉ đổi lượt nếu game CHƯA kết thúc
+            if not self.game_over:
+                self.switch_turn()
+                print(f"Đã đi từ {from_pos} đến {to_pos}. Lượt tiếp theo: {self.turn}")
+            else:
+                print("Game đã kết thúc.")
         else:
             print(f"Lỗi: Không có quân cờ tại {from_pos}")
