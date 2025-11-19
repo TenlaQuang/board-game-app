@@ -36,6 +36,8 @@ class GameState:
 
     @property
     def game_over(self):
+        # [GIẢI THÍCH] Đây là thuộc tính chỉ đọc (Read-only).
+        # Nó tự động trả về True nếu winner có giá trị.
         return self.winner is not None
 
     def get_piece(self, pos):
@@ -51,16 +53,11 @@ class GameState:
 
     # --- CÁC HÀM HỖ TRỢ ONLINE ---
     def set_player_color(self, color: str):
-        """
-        Thiết lập màu cho người chơi trên máy này.
-        """
+        """Thiết lập màu cho người chơi trên máy này."""
         self.my_color = color
 
     def is_my_turn(self) -> bool:
-        """
-        Kiểm tra xem có phải lượt của người chơi local không.
-        """
-        # Nếu chưa set màu (chơi offline 1 máy), thì ai đi cũng được
+        """Kiểm tra xem có phải lượt của người chơi local không."""
         if self.my_color is None:
             return True
         return self.current_turn == self.my_color
@@ -94,8 +91,9 @@ class GameState:
             # Di chuyển quân cờ
             self.board.move_piece(from_pos, to_pos)
 
-            # --- LOGIC ĂN VUA LÀ THẮNG LUÔN ---
-            if captured and captured.type.lower() in ['king', 'general']:
+            # --- [FIX LỖI .type] LOGIC ĂN VUA LÀ THẮNG LUÔN ---
+            # Sửa .type thành .symbol
+            if captured and captured.symbol.upper() in ['K', 'G']:
                 self.winner = self.current_turn
                 return True
             # ----------------------------------------
@@ -105,7 +103,7 @@ class GameState:
                 opponent = self.opponent_color()
                 self.is_check = self.validator.is_in_check(self.board, opponent)
                 
-                # Nếu muốn logic Checkmate chuẩn thì bật dòng này (có thể nặng máy nếu thuật toán chưa tối ưu)
+                # Nếu muốn logic Checkmate chuẩn thì bật dòng này
                 self.is_checkmate = self.is_check and self.validator.is_checkmate(self.board, opponent)
 
                 if self.is_checkmate:
