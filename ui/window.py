@@ -6,15 +6,14 @@ from utils.constants import (
     LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR,
     XIANGQI_LIGHT_BACKGROUND_COLOR, XIANGQI_DARK_BACKGROUND_COLOR
 )
-from core import Board
+from core.board import Board 
 
-# --- IMPORT CÁC SCENE ---
+# --- IMPORT SCENES ---
 from .menu import MainMenu
 from .board_ui import BoardUI
 from .chess_menu import ChessMenu      
 from .xiangqi_menu import XiangqiMenu 
 from .animated_background import AnimatedBackground
-from core.game_state import GameState
 
 try:
     from .online_menu import OnlineMenu
@@ -38,7 +37,7 @@ class App:
         load_assets()
         self.ui_manager = pygame_gui.UIManager((WIDTH, HEIGHT), 'theme.json')
 
-        # Khởi tạo các Menu
+        # Initialize Menus
         self.main_menu = MainMenu(self.screen, self.ui_manager)
         self.chess_menu = ChessMenu(self.screen, self.ui_manager)
         self.xiangqi_menu = XiangqiMenu(self.screen, self.ui_manager)
@@ -63,9 +62,14 @@ class App:
             events = pygame.event.get()
             
             for event in events:
-                if event.type == pygame.QUIT: self.running = False
+                if event.type == pygame.QUIT: 
+                    self.running = False
+                    # Try to close socket if quitting mid-game
+                    if self.network_manager: self.network_manager.shutdown()
+
                 self.ui_manager.process_events(event)
 
+                # --- MAIN MENU ---
                 if self.state == 'MAIN_MENU':
                     action = self.main_menu.handle_events(event)
                     if action == 'QUIT': self.running = False
@@ -74,6 +78,7 @@ class App:
                     elif action == 'GOTO_XIANGQI_MENU':
                         self.main_menu.hide(); self.xiangqi_menu.show(); self.selected_game_type = 'chinese_chess'; self.state = 'XIANGQI_MENU'
 
+                # --- CHESS MENU ---
                 elif self.state == 'CHESS_MENU':
                     action = self.chess_menu.handle_events(event)
                     if action == 'BACK_TO_MAIN':
@@ -82,8 +87,12 @@ class App:
                         self.chess_menu.hide(); self._start_game_session('chess', online=False) 
                     elif action == 'PLAY_ONLINE':
                         self.chess_menu.hide(); 
-                        if self.online_menu: self.online_menu.show(); self.state = 'ONLINE_MENU'
+                        if self.online_menu: 
+                            self.online_menu.current_game_type = 'chess' # Ensure type is set
+                            self.online_menu.show(); 
+                            self.state = 'ONLINE_MENU'
 
+                # --- XIANGQI MENU ---
                 elif self.state == 'XIANGQI_MENU':
                     action = self.xiangqi_menu.handle_events(event)
                     if action == 'BACK_TO_MAIN':
@@ -92,12 +101,18 @@ class App:
                         self.xiangqi_menu.hide(); self._start_game_session('chinese_chess', online=False)
                     elif action == 'PLAY_ONLINE': 
                         self.xiangqi_menu.hide(); 
-                        if self.online_menu: self.online_menu.show(); self.state = 'ONLINE_MENU'
+                        if self.online_menu: 
+                            self.online_menu.current_game_type = 'chinese_chess' # Ensure type is set
+                            self.online_menu.show(); 
+                            self.state = 'ONLINE_MENU'
 
+                # --- ONLINE MENU ---
                 elif self.state == 'ONLINE_MENU':
                     if self.online_menu:
+                        # Keep syncing game type just in case
                         self.online_menu.current_game_type = self.selected_game_type
-                        action = self.online_menu.handle_events(event)
+                        self.network_manager.current_lobby_state = self.selected_game_type
+                        
                         action = self.online_menu.handle_events(event)
                         
                         if action == 'BACK':
@@ -105,15 +120,23 @@ class App:
                             if self.selected_game_type == 'chess': self.chess_menu.show(); self.state = 'CHESS_MENU'
                             else: self.xiangqi_menu.show(); self.state = 'XIANGQI_MENU'
                         
+                        # Check for successful P2P connection
                         if self.network_manager.p2p_socket:
                             print(f">>> VÀO GAME ONLINE ({self.selected_game_type}) <<<")
                             self.online_menu.hide()
                             self._start_game_session(self.selected_game_type, online=True)
 
+                # --- GAME SCREEN ---
                 elif self.state == 'GAME_SCREEN':
                     if self.game_screen:
-                        self.game_screen.handle_events(event)
+                        action = self.game_screen.handle_events(event)
+                        # Handle return to menu from in-game (if you implemented a back button)
+                        if action == 'QUIT_GAME':
+                            self.game_screen = None
+                            self.main_menu.show()
+                            self.state = 'MAIN_MENU'
 
+            # --- DRAW ---
             self.ui_manager.update(time_delta)
             
             if self.state == 'MAIN_MENU':
@@ -138,10 +161,7 @@ class App:
     def _start_game_session(self, game_type, online=False):
         pieces_img = CHESS_PIECES if game_type == 'chess' else XIANGQI_PIECES
         
-        # --- [FIX] SỬ DỤNG GAMESTATE THAY VÌ BOARD ---
-        # GameState sẽ quản lý cả Board và Lượt đi (current_turn)
-        game_logic = GameState(game_type=game_type) 
-        # ---------------------------------------------
+        game_logic = Board(game_type=game_type) 
         
         net_mgr = None
         role = None
@@ -150,18 +170,24 @@ class App:
             net_mgr = self.network_manager
             role = 'host' if self.network_manager.is_host else 'client'
         
-        SIDEBAR_WIDTH = 320
+        # --- SCREEN LAYOUT ---
+        # Define width for sidebar (Chat + Buttons)
+        SIDEBAR_WIDTH = 320 
+        
+        # Calculate remaining width for the Board
         BOARD_WIDTH = WIDTH - SIDEBAR_WIDTH
         
+        # Define Rects for Board and Sidebar
         board_rect = pygame.Rect(0, 0, BOARD_WIDTH, HEIGHT)
         sidebar_rect = pygame.Rect(BOARD_WIDTH, 0, SIDEBAR_WIDTH, HEIGHT)
         
+        # Initialize BoardUI with both rects
         self.game_screen = BoardUI(
             self.screen, 
             game_logic, 
             pieces_img, 
-            board_rect, 
-            sidebar_rect=sidebar_rect,
+            board_rect=board_rect,          
+            sidebar_rect=sidebar_rect, 
             network_manager=net_mgr,
             my_role=role
         )

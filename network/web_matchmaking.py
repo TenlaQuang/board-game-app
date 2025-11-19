@@ -1,4 +1,4 @@
-# network/web_matchmaking.py (Bản cuối cùng - Hỗ trợ Radmin & Game Type)
+# network/web_matchmaking.py (Bản Chuẩn - Khớp với Server mới)
 import requests
 import subprocess
 import re
@@ -8,35 +8,31 @@ from typing import Optional, Dict
 WEB_SERVER = "https://board-game-app-sv.onrender.com"
 
 # ==========================
-# LẤY IP RADMIN VPN (Windows)
+# LẤY IP RADMIN VPN (PowerShell)
 # ==========================
-# Trong network/web_matchmaking.py
-
 def get_radmin_ip() -> Optional[str]:
-    """Tìm IP Radmin bằng cách quét dải IP 26.x.x.x trong output ipconfig."""
+    """Tìm IP Radmin bằng PowerShell (Cách mạnh nhất)."""
     try:
-        # Chạy lệnh ipconfig
-        output = subprocess.check_output("ipconfig", shell=True, encoding="utf8")
-
-        # FIX: Trực tiếp tìm kiếm IP dạng 26.x.x.x trong toàn bộ output
-        # Regex tìm: "IPv4 Address" + [khoảng trắng/ký tự] + IP bắt đầu bằng 26.
-        match = re.search(
-            r"IPv4 Address[^\:]*: (26\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})", 
-            output
-        )
-        if match:
-            # Trả về IP (ví dụ: 26.24.235.145)
-            return match.group(1).strip()
-
-    except Exception as e:
-        # Lỗi nếu ipconfig không chạy được
-        pass
-
-    return None # Trả về None nếu không tìm thấy IP Radmin
-
+        # Dùng PowerShell để lọc IP bắt đầu bằng 26.
+        cmd = 'powershell -command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -like \'26.*\'} | Select-Object -ExpandProperty IPAddress"'
+        output = subprocess.check_output(cmd, shell=True, encoding="utf8", timeout=3).strip()
+        
+        # Lấy dòng đầu tiên nếu có nhiều dòng
+        if output:
+            return output.splitlines()[0].strip()
+    except:
+        # Fallback: Dùng ipconfig nếu PowerShell lỗi
+        try:
+            output = subprocess.check_output("ipconfig", shell=True, encoding="utf8")
+            match = re.search(r"IPv4 Address[^\:]*: (26\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})", output)
+            if match:
+                return match.group(1).strip()
+        except:
+            pass
+    return None
 
 # ==========================
-# HEARTBEAT
+# HEARTBEAT (Cập nhật: Thêm lobby_state)
 # ==========================
 def send_heartbeat(username: str, p2p_port: int, lobby_state: str = "menu"):
     radmin_ip = get_radmin_ip()
@@ -46,51 +42,47 @@ def send_heartbeat(username: str, p2p_port: int, lobby_state: str = "menu"):
         requests.post(url, json={
             "username": username,
             "p2p_port": p2p_port,
-            "ip": radmin_ip,
-            "lobby_state": lobby_state # <--- MỚI: Gửi trạng thái lên
+            "ip": radmin_ip,       # Gửi IP Radmin
+            "lobby_state": lobby_state # Gửi trạng thái (chess/xiangqi/menu)
         }, timeout=5)
     except:
         pass
 
 # ==========================
-# LẤY DANH SÁCH USER ONLINE (HÀM BỊ LỖI Ở LẦN TRƯỚC)
+# LẤY DANH SÁCH USER
 # ==========================
 def get_online_users() -> list:
-    """Hàm này phải tồn tại để network_manager gọi."""
     url = f"{WEB_SERVER}/users"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=5)
         if r.status_code == 200:
             return r.json()
     except:
         pass
     return []
 
-
 # ==========================
-# TẠO PHÒNG ONLINE
+# TẠO PHÒNG
 # ==========================
 def create_room_online(username: str, p2p_port: int, game_type: str) -> Optional[str]:
-    radmin_ip = get_radmin_ip() # Lấy IP Radmin
+    radmin_ip = get_radmin_ip()
 
     url = f"{WEB_SERVER}/create-room"
     try:
         r = requests.post(url, json={
             "username": username,
             "p2p_port": p2p_port,
-            "ip": radmin_ip, # Gửi IP Radmin/LAN
+            "ip": radmin_ip,
             "game_type": game_type
         }, timeout=90)
         if r.status_code == 200:
             return r.json().get("room_id")
-    except Exception as e:
-        # print(f"Err create: {e}")
+    except:
         pass
     return None
 
-
 # ==========================
-# JOIN PHÒNG ONLINE
+# VÀO PHÒNG
 # ==========================
 def join_room_online(username: str, room_id: str) -> Optional[Dict]:
     url = f"{WEB_SERVER}/join-room"
@@ -100,20 +92,15 @@ def join_room_online(username: str, room_id: str) -> Optional[Dict]:
             "room_id": room_id
         }, timeout=90)
         if r.status_code == 200:
-            return r.json() # Trả về game_type và host_ip (là IP Radmin)
-    except Exception as e:
-        # print(f"Err join: {e}")
+            return r.json()
+    except:
         pass
-
     return None
 
-
 # ==========================
-# SEND INVITE
+# GỬI MỜI
 # ==========================
 def send_invite_online(challenger: str, target: str, room_id: str, game_type: str):
-    radmin_ip = get_radmin_ip() # Lấy IP Radmin
-
     url = f"{WEB_SERVER}/send-invite"
     try:
         requests.post(url, json={
@@ -121,14 +108,12 @@ def send_invite_online(challenger: str, target: str, room_id: str, game_type: st
             "target": target,
             "room_id": room_id,
             "game_type": game_type,
-            "ip": radmin_ip # Gửi IP Radmin/LAN
         }, timeout=2)
     except:
         pass
 
-
 # ==========================
-# CHECK INVITE
+# KIỂM TRA MỜI
 # ==========================
 def check_invite_online(username: str):
     url = f"{WEB_SERVER}/check-invite/{username}"
@@ -136,8 +121,15 @@ def check_invite_online(username: str):
         r = requests.get(url, timeout=2)
         if r.status_code == 200:
             data = r.json()
-            if "from" in data:
-                return data
+            if "from" in data: return data
     except:
         pass
     return None
+
+# ==========================
+# CHẤP NHẬN MỜI (Optional)
+# ==========================
+def accept_invite_online(username: str, room_id: str):
+    url = f"{WEB_SERVER}/accept-invite/{username}/{room_id}"
+    try: requests.post(url, timeout=2)
+    except: pass

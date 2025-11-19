@@ -19,7 +19,7 @@ class OnlineMenu:
         # Biến lưu trữ
         self.target_player = None 
         self.last_user_set = set()
-        self.users_data = {} # MỚI: Lưu full thông tin user (để check lobby_state)
+        self.users_data = {} # Lưu trữ data người chơi
 
         # 1. Khung cửa sổ chính
         self.rect = pygame.Rect(0, 0, 700, 560)
@@ -59,6 +59,10 @@ class OnlineMenu:
         self.window.show()
         game_name = "Cờ Vua" if self.current_game_type == 'chess' else "Cờ Tướng"
         self.window.set_display_title(f"Sảnh Online - {game_name}")
+        
+        # [QUAN TRỌNG] Cập nhật trạng thái mạng ngay khi hiện menu
+        self.network_manager.current_lobby_state = self.current_game_type 
+        
         self.network_manager.start_hosting_phase()
         self.network_manager.start_polling_users(self.update_user_list_ui)
 
@@ -71,10 +75,9 @@ class OnlineMenu:
             self.invite_dialog = None
 
     def update_user_list_ui(self, users, invite=None):
-        # 1. Lưu lại data để dùng khi bấm nút (Quan trọng)
+        # 1. Cập nhật dữ liệu người dùng
         self.users_data = {u['username']: u for u in users}
 
-        # 2. Logic giữ lựa chọn (Giữ nguyên)
         current_selection = self.user_list.get_single_selection() 
         new_names = [f"{u['username']}" for u in users]
         new_user_set = set(new_names)
@@ -85,18 +88,17 @@ class OnlineMenu:
             if current_selection and current_selection in new_names:
                 self.user_list.set_selection_list([current_selection]) 
 
-        # 3. Xử lý lời mời (Popup)
+        # 2. Xử lý lời mời (Popup)
         if invite:
             challenger = invite.get("from")
             room_id = invite.get("room_id")
             g_type = invite.get("game_type", "chess") 
             
-            # --- FIX: KIỂM TRA LOẠI GAME TRƯỚC KHI HIỆN POPUP ---
+            # --- KIỂM TRA LOẠI GAME ---
             if g_type != self.current_game_type:
-                # Nếu loại game không khớp (Chess mời Xiangqi) -> Tự động từ chối ngầm
-                # print(f"[INVITE] Từ chối: Mời chơi {g_type}, nhưng tôi đang ở menu {self.current_game_type}.")
+                # Nếu khác loại game, bỏ qua không hiện popup
                 return 
-            # ----------------------------------------------------
+            # --------------------------
 
             if self.invite_dialog is None:
                 self.current_game_type = g_type 
@@ -114,13 +116,21 @@ class OnlineMenu:
                 self.invite_dialog.rebuild() 
 
     def handle_events(self, event):
-        # --- LẮNG NGHE SỰ KIỆN CLICK VÀO TÊN ---
+        # --- XỬ LÝ CLICK VÀO LIST ---
         if event.type == pygame_gui.UI_SELECTION_LIST_NEW_SELECTION:
             if event.ui_element == self.user_list:
                 self.target_player = event.text
-                self.lbl_status.set_text(f"Đã chọn: {self.target_player}. Bấm Thách Đấu.")
+                # Lấy info để hiển thị thêm (tùy chọn)
+                user_info = self.users_data.get(self.target_player)
+                if user_info:
+                    state = user_info.get('lobby_state', 'menu')
+                    game_map = {'chess': 'Cờ Vua', 'chinese_chess': 'Cờ Tướng', 'menu': 'Menu'}
+                    state_vn = game_map.get(state, state)
+                    self.lbl_status.set_text(f"Đã chọn: {self.target_player} ({state_vn})")
+                else:
+                    self.lbl_status.set_text(f"Đã chọn: {self.target_player}")
 
-        # --- XỬ LÝ SỰ KIỆN POPUP ---
+        # --- XỬ LÝ POPUP ---
         if event.type == pygame_gui.UI_CONFIRMATION_DIALOG_CONFIRMED:
             if event.ui_element == self.invite_dialog:
                 self.lbl_status.set_text("Đã chấp nhận! Đang vào phòng...")
@@ -135,6 +145,7 @@ class OnlineMenu:
                 self.invite_dialog = None
                 self.pending_room_id = None
 
+        # --- XỬ LÝ NÚT BẤM ---
         if event.type == pygame_gui.UI_BUTTON_PRESSED:
             if event.ui_element == self.btn_back:
                 return "BACK"
@@ -154,12 +165,11 @@ class OnlineMenu:
                 else:
                     self.lbl_status.set_text("Vui lòng nhập ID!")
 
-            # --- XỬ LÝ NÚT THÁCH ĐẤU (ĐÃ THÊM CHECK LOBBY STATE) ---
             if event.ui_element == self.btn_challenge:
                 if self.target_player:
                     target_name = self.target_player
                     
-                    # Lấy thông tin đối thủ để kiểm tra trạng thái
+                    # Lấy thông tin đối thủ
                     opponent_data = self.users_data.get(target_name)
                     
                     if target_name == self.network_manager.username:
@@ -168,18 +178,16 @@ class OnlineMenu:
                     elif opponent_data:
                         opp_state = opponent_data.get('lobby_state', 'menu')
                         
-                        # NẾU KHÁC GAME -> CHẶN LUÔN
+                        # CHECK LOBBY STATE: Chặn nếu khác game
                         if opp_state != self.current_game_type:
                             game_names = {'chess': 'Cờ Vua', 'chinese_chess': 'Cờ Tướng', 'menu': 'Menu'}
                             opp_game_name = game_names.get(opp_state, "Không xác định")
-                            self.lbl_status.set_text(f"Lỗi: {target_name} đang chơi {opp_game_name}!")
+                            self.lbl_status.set_text(f"Lỗi: {target_name} đang ở {opp_game_name}!")
                         else:
-                            # Cùng game -> Cho phép mời
                             self.lbl_status.set_text(f"Đang mời {target_name} ({self.current_game_type})...")
                             threading.Thread(target=self._thread_challenge, args=(target_name,), daemon=True).start()
-                            self.target_player = None 
                     else:
-                         self.lbl_status.set_text("Không tìm thấy thông tin người chơi.")
+                         self.lbl_status.set_text("Đang tải thông tin người chơi...")
 
                 else:
                     self.lbl_status.set_text("Chưa chọn người chơi!") 
