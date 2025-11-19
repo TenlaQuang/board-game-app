@@ -21,6 +21,7 @@ class NetworkManager:
         self._polling = False
         self._poll_callback = None
         self.is_host = False 
+        self.current_lobby_state = "menu"
         
         # Biến mới để lưu trữ IP Radmin/LAN của chính máy này
         self.local_radmin_ip = web_matchmaking.get_radmin_ip() 
@@ -83,8 +84,12 @@ class NetworkManager:
         while self._polling:
             try: # <--- BẮT ĐẦU KHỐI CHỐNG CRASH
                 if self._listening_port:
-                    # Heartbeat
-                    web_matchmaking.send_heartbeat(self.username, self._listening_port)
+                    # MỚI: Gửi self.current_lobby_state lên server
+                    web_matchmaking.send_heartbeat(
+                        self.username, 
+                        self._listening_port, 
+                        self.current_lobby_state
+                    )
                 
                 # Lấy danh sách user và kiểm tra lời mời
                 users = web_matchmaking.get_online_users()
