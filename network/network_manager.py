@@ -77,14 +77,30 @@ class NetworkManager:
     def stop_polling_users(self):
         self._polling = False
 
+    # Trong network/network_manager.py
+
     def _poll_loop(self):
         while self._polling:
-            if self._listening_port:
-                web_matchmaking.send_heartbeat(self.username, self._listening_port)
-            users = web_matchmaking.get_online_users()
-            if self._poll_callback:
-                try: self._poll_callback(users)
-                except: pass
+            try: # <--- BẮT ĐẦU KHỐI CHỐNG CRASH
+                if self._listening_port:
+                    # Heartbeat
+                    web_matchmaking.send_heartbeat(self.username, self._listening_port)
+                
+                # Lấy danh sách user và kiểm tra lời mời
+                users = web_matchmaking.get_online_users()
+                invite = web_matchmaking.check_invite_online(self.username)
+                
+                if self._poll_callback:
+                    # Truyền kết quả về UI
+                    self._poll_callback(users, invite)
+                    
+            except Exception as e:
+                # Nếu có lỗi (Ví dụ: mạng lag quá, không lấy được IP Radmin,...)
+                print(f"[NET] POLLING THREAD RECOVERED FROM ERROR: {e}")
+                # Đợi lâu hơn một chút trước khi thử lại
+                time.sleep(5) 
+                
+            # Thời gian chờ giữa các lần poll thành công
             time.sleep(3)
 
     # --- 4. CLIENT CONNECT (ĐÃ SỬA CHUỖI THỬ NGHIỆM IP) ---
