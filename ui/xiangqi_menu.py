@@ -1,8 +1,5 @@
-# ui/xiangqi_menu.py
 import pygame
 import pygame_gui
-# Import ảnh nút Cờ Tướng
-from .assets import XIANGQI_BUTTONS 
 from utils.constants import WIDTH
 
 class XiangqiMenu:
@@ -10,58 +7,56 @@ class XiangqiMenu:
         self.screen = screen
         self.ui_manager = ui_manager
         
-        # Lấy ảnh nút "Play" (bạn cần tạo file ảnh 'button_play_normal.png'...)
-        play_normal = XIANGQI_BUTTONS.get('play_normal')
-        play_hover = XIANGQI_BUTTONS.get('play_hover')
+        # Kích thước và vị trí nút (Căn giữa)
+        w, h = 280, 50  # Chiều rộng nút to hơn chút cho chữ tiếng Việt
+        x = (WIDTH - w) // 2
         
-        self.button_list = [] 
+        # Vị trí Y bắt đầu
+        y = 250 
 
-        if play_normal and play_hover:
-            btn_width = play_normal.get_width()
-            btn_height = play_normal.get_height()
-            x_pos = (WIDTH - btn_width) // 2
-
-            self.play_button = pygame_gui.elements.UIImageButton(
-                relative_rect=pygame.Rect((x_pos, 550), (btn_width, btn_height)), # Đặt ở vị trí 550
-                normal_image=play_normal,
-                hovered_image=play_hover,
-                manager=self.ui_manager,
-                object_id='#image_button'
-            )
-            self.button_list.append(self.play_button)
-        else:
-            # Tạo nút dự phòng nếu không có ảnh
-            print("Cảnh báo (XiangqiMenu): Không tìm thấy ảnh cho nút 'Play'. Dùng nút dự phòng.")
-            self.play_button = pygame_gui.elements.UIButton(
-                relative_rect=pygame.Rect(((WIDTH-300)//2, 550), (300, 100)),
-                text='Play (Missing Image)',
-                manager=self.ui_manager
-            )
-            self.button_list.append(self.play_button)
-            
-        # Nút Quay Lại
-        self.back_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((10, 10), (100, 40)),
-            text='< Back',
-            manager=self.ui_manager,
-            object_id='#back_button'
+        # Nút Chơi với Máy (Offline)
+        self.btn_pve = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((x, y), (w, h)),
+            text="Chơi Cờ Tướng (Offline)",
+            manager=ui_manager
         )
-        self.button_list.append(self.back_button)
 
-        self.hide() # Mặc định ẩn
+        # Nút Chơi Online (P2P)
+        self.btn_pvp_online = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((x, y + 70), (w, h)),
+            text="Chơi Cờ Tướng (Online)",
+            manager=ui_manager
+        ) 
+        
+        # Nút Quay lại
+        self.btn_back = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((x, y + 140), (w, h)),
+            text="Quay lại Menu Chính",
+            manager=ui_manager
+        )
+
+        # Mặc định ẩn đi
+        self.hide()
+
+    def show(self):
+        self.btn_pve.show()
+        self.btn_pvp_online.show()
+        self.btn_back.show()
+
+    def hide(self):
+        self.btn_pve.hide()
+        self.btn_pvp_online.hide()
+        self.btn_back.hide()
 
     def handle_events(self, event):
         if event.type == pygame_gui.UI_BUTTON_PRESSED:
-            if event.ui_element == self.play_button:
-                return 'PLAY_XIANGQI_QUICK'
-            if event.ui_element == self.back_button:
-                return 'BACK_TO_MAIN_MENU'
+            if event.ui_element == self.btn_back:
+                return 'BACK_TO_MAIN' # Tín hiệu quay lại
+            
+            if event.ui_element == self.btn_pve:
+                return 'PLAY_OFFLINE' # Tín hiệu chơi với máy/tại chỗ
+            
+            if event.ui_element == self.btn_pvp_online:
+                return 'PLAY_ONLINE'  # Tín hiệu mở menu Online
+                
         return None
-
-    def hide(self):
-        for button in self.button_list:
-            button.hide()
-
-    def show(self):
-        for button in self.button_list:
-            button.show()

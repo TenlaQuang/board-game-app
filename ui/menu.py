@@ -1,4 +1,4 @@
-# ui/menu.py (Phiên bản MỚI, có .show() và .hide())
+# ui/menu.py
 import pygame
 import pygame_gui
 from utils.constants import WIDTH
@@ -8,75 +8,52 @@ class MainMenu:
         self.screen = screen
         self.ui_manager = ui_manager
 
-        # Kích thước và vị trí nút
+        # Layout
         button_width = 250
         button_height = 60
-        x_pos = (WIDTH - button_width) // 2 # Căn giữa
+        x_pos = (WIDTH - button_width) // 2
+        start_y = 250
 
-        # self.button_list dùng để quản lý ẩn/hiện
-        self.button_list = [] 
+        self.button_list = []
 
-        # --- Duay lai các nút bấm ban đầu ---
-        self.chess_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((x_pos, 200), (button_width, button_height)),
-            text='Chơi Cờ Vua (Offline)', # Sửa text
-            manager=self.ui_manager,
-            object_id='#chess_button'
+        # Nút Cờ Vua
+        self.btn_chess = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((x_pos, start_y), (button_width, button_height)),
+            text='Cờ Vua',
+            manager=self.ui_manager
         )
-        self.button_list.append(self.chess_button)
+        self.button_list.append(self.btn_chess)
 
-        self.xiangqi_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((x_pos, 280), (button_width, button_height)), # Cách 80px
-            text='Chơi Cờ Tướng (Offline)', # Sửa text
-            manager=self.ui_manager,
-            object_id='#xiangqi_button'
+        # Nút Cờ Tướng
+        self.btn_xiangqi = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((x_pos, start_y + 80), (button_width, button_height)),
+            text='Cờ Tướng',
+            manager=self.ui_manager
         )
-        self.button_list.append(self.xiangqi_button)
-
-        # --- MODIFIED: Thay thế nút "Bật Server" bằng "Chơi Online" ---
-        self.play_online_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((x_pos, 360), (button_width, button_height)),
-            text='Choi Online (P2P)', # <-- MODIFIED: Đổi text
-            manager=self.ui_manager,
-            object_id='#play_online_button' # <-- MODIFIED: Đổi ID (tùy chọn)
-        )
-        self.button_list.append(self.play_online_button) # <-- MODIFIED: Thêm nút mới
+        self.button_list.append(self.btn_xiangqi)
         
-        # (Tôi thêm lại nút Thoát để dễ sử dụng)
-        self.quit_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((x_pos, 440), (button_width, button_height)),
-            text='Thoát Game',
-            manager=self.ui_manager,
-            object_id='#quit_button'
+        # Nút Thoát
+        self.btn_quit = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((x_pos, start_y + 160), (button_width, button_height)),
+            text='Thoát',
+            manager=self.ui_manager
         )
-        self.button_list.append(self.quit_button)
+        self.button_list.append(self.btn_quit)
 
-        # Mặc định là KHÔNG hiện, window.py sẽ gọi .show()
-        self.hide() 
-
-    def handle_events(self, event):
-        """Xử lý input và trả về trạng thái tiếp theo"""
-        if event.type == pygame_gui.UI_BUTTON_PRESSED:
-            if event.ui_element == self.chess_button:
-                return 'PLAY_CHESS' # Tín hiệu mở menu cờ vua
-            if event.ui_element == self.xiangqi_button:
-                return 'PLAY_XIANGQI' # Tín hiệu mở menu cờ tướng
-            
-            # --- MODIFIED: "Nối dây" nút Chơi Online ---
-            if event.ui_element == self.play_online_button: # <-- MODIFIED
-                print("[MainMenu] Nút 'Chơi Online' đã được bấm!")
-                return 'PLAY_ONLINE' # <-- MODIFIED: Đây là tín hiệu quan trọng
-            
-            if event.ui_element == self.quit_button:
-                return 'QUIT'
-        return None
-
-    def hide(self):
-        """Ẩn tất cả các nút của menu này."""
-        for button in self.button_list:
-            button.hide()
+        self.hide()
 
     def show(self):
-        """Hiện tất cả các nút của menu này."""
-        for button in self.button_list:
-            button.show()
+        for btn in self.button_list: btn.show()
+
+    def hide(self):
+        for btn in self.button_list: btn.hide()
+
+    def handle_events(self, event):
+        if event.type == pygame_gui.UI_BUTTON_PRESSED:
+            if event.ui_element == self.btn_chess:
+                return 'GOTO_CHESS_MENU'
+            if event.ui_element == self.btn_xiangqi:
+                return 'GOTO_XIANGQI_MENU'
+            if event.ui_element == self.btn_quit:
+                return 'QUIT'
+        return None

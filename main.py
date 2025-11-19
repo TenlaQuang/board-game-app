@@ -1,37 +1,42 @@
-# main.py
-# Nhiệm vụ: Khởi tạo NetworkManager và App, sau đó "tiêm" manager vào App.
-
+# main.py (Full Code)
 import sys
-# KHÔNG CẦN pygame ở đây nữa
+import pygame
 
-from ui.window import App # <-- Import class App từ file window.py
+# 1. Thêm đường dẫn để Python tìm thấy các module
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Kiểm tra xem file network_manager.py có tồn tại không
+# 2. Import các thành phần
 try:
-    from network.network_manager import NetworkManager # <-- Import class NetworkManager
-except ImportError:
-    print("LỖI: Không tìm thấy file 'network/network_manager.py'.")
+    from network.network_manager import NetworkManager
+except ImportError as e:
+    print("LỖI IMPORT NETWORK:", e)
+    print("Hãy kiểm tra xem file network/network_manager.py có tồn tại và đúng cú pháp không.")
     sys.exit(1)
 
-# Cấu hình (Bạn có thể đưa vào UI sau)
-SERVER_IP = "127.0.0.1" # <-- ĐỔI THÀNH IP CỦA SERVER MAI MỐI (127.0.0.1 nếu chạy test ở máy)
-SERVER_PORT = 9999
-# KHÔNG CẦN MY_USERNAME ở đây nữa
+try:
+    from ui.window import App
+except ImportError as e:
+    print("LỖI IMPORT UI:", e)
+    sys.exit(1)
+
+# Cấu hình Server Render (bạn có thể sửa IP/Port này nếu cần, 
+# nhưng logic mới dùng web_matchmaking nên cái này chủ yếu để giữ format cũ)
+SERVER_IP = "board-game-app-sv.onrender.com" 
+SERVER_PORT = 80
+
+def main():
+    # Khởi tạo Network Manager
+    print("Đang khởi động Network Manager...")
+    network_manager = NetworkManager()
+
+    # Khởi tạo App Giao diện
+    print("Đang khởi động Giao diện...")
+    # Truyền network_manager vào App để UI có thể gọi lệnh mạng
+    app = App(network_manager, SERVER_IP, SERVER_PORT)
+
+    # Chạy vòng lặp game
+    app.run()
 
 if __name__ == "__main__":
-    
-    # 1. Tạo NetworkManager (bộ não mạng)
-    network_manager = NetworkManager()
-    
-    # 2. Tạo App (Giao diện) và "tiêm" network_manager vào
-    # MODIFIED: Xóa MY_USERNAME khỏi hàm khởi tạo
-    app = App(network_manager, SERVER_IP, SERVER_PORT)
-    
-    # 3. Chạy game
-    try:
-        app.run()
-    except KeyboardInterrupt:
-        print("Đã đóng ứng dụng.")
-    finally:
-        # Đảm bảo dọn dẹp kết nối mạng khi thoát
-        network_manager.shutdown()
+    main()

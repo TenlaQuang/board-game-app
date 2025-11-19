@@ -1,8 +1,6 @@
 # ui/chess_menu.py
 import pygame
 import pygame_gui
-# Import ảnh nút Cờ Vua
-from .assets import CHESS_BUTTONS 
 from utils.constants import WIDTH
 
 class ChessMenu:
@@ -10,59 +8,32 @@ class ChessMenu:
         self.screen = screen
         self.ui_manager = ui_manager
         
-        # Lấy ảnh nút (đã được load từ assets.py)
-        quick_play_normal = CHESS_BUTTONS.get('quick_play_normal')
-        quick_play_hover = CHESS_BUTTONS.get('quick_play_hover')
-        
-        self.button_list = [] # List để quản lý ẩn/hiện
+        w, h = 250, 50
+        x = (WIDTH - w) // 2
+        y = 200
 
-        # Tạo nút "Quick play" bằng hình ảnh (nếu có)
-        if quick_play_normal and quick_play_hover:
-            btn_width = quick_play_normal.get_width()
-            btn_height = quick_play_normal.get_height()
-            x_pos = (WIDTH - btn_width) // 2
+        self.btn_pve = pygame_gui.elements.UIButton(pygame.Rect((x, y), (w, h)), "Chơi với Máy (PvE)", ui_manager)
+        self.btn_pvp_online = pygame_gui.elements.UIButton(pygame.Rect((x, y+70), (w, h)), "Chơi Online (PvP)", ui_manager) # <--- Nút mới
+        self.btn_back = pygame_gui.elements.UIButton(pygame.Rect((x, y+140), (w, h)), "Quay lại", ui_manager)
 
-            self.quick_play_button = pygame_gui.elements.UIImageButton(
-                relative_rect=pygame.Rect((x_pos, 300), (btn_width, btn_height)),
-                normal_image=quick_play_normal,
-                hovered_image=quick_play_hover,
-                manager=self.ui_manager,
-                object_id='#image_button' # Dùng chung 1 style cho các nút ảnh
-            )
-            self.button_list.append(self.quick_play_button)
-        else:
-            # Tạo nút dự phòng nếu không có ảnh
-            print("Cảnh báo (ChessMenu): Không tìm thấy ảnh cho nút 'Quick play'. Dùng nút dự phòng.")
-            self.quick_play_button = pygame_gui.elements.UIButton(
-                relative_rect=pygame.Rect(((WIDTH-300)//2, 300), (300, 70)),
-                text='Quick Play (Missing Image)',
-                manager=self.ui_manager
-            )
-            self.button_list.append(self.quick_play_button)
-            
-        # Nút Quay Lại
-        self.back_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((10, 10), (100, 40)),
-            text='< Back',
-            manager=self.ui_manager,
-            object_id='#back_button'
-        )
-        self.button_list.append(self.back_button)
+        self.hide()
 
-        self.hide() # Mặc định ẩn
+    def show(self):
+        self.btn_pve.show()
+        self.btn_pvp_online.show()
+        self.btn_back.show()
+
+    def hide(self):
+        self.btn_pve.hide()
+        self.btn_pvp_online.hide()
+        self.btn_back.hide()
 
     def handle_events(self, event):
         if event.type == pygame_gui.UI_BUTTON_PRESSED:
-            if event.ui_element == self.quick_play_button:
-                return 'PLAY_CHESS_QUICK' # Tín hiệu để window.py bắt
-            if event.ui_element == self.back_button:
-                return 'BACK_TO_MAIN_MENU'
+            if event.ui_element == self.btn_back:
+                return 'BACK_TO_MAIN'
+            if event.ui_element == self.btn_pve:
+                return 'PLAY_OFFLINE'
+            if event.ui_element == self.btn_pvp_online:
+                return 'PLAY_ONLINE' # <--- Tín hiệu mới
         return None
-
-    def hide(self):
-        for button in self.button_list:
-            button.hide()
-
-    def show(self):
-        for button in self.button_list:
-            button.show()

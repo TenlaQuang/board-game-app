@@ -1,221 +1,191 @@
-# Trong file: ui/board_ui.py
+# ui/board_ui.py
 import pygame
-from core.board import Board # Import "bộ não" Board của bạn
+from core.board import Board
 from utils.constants import (
     WIDTH, HEIGHT,
     LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR, HIGHLIGHT_COLOR,
-    # Import các hằng số Cờ Tướng (quan trọng!)
     XIANGQI_ROWS, XIANGQI_COLS, PADDING_X, PADDING_Y, 
     SQUARE_SIZE_W, SQUARE_SIZE_H
 )
-# Import ảnh nền bàn cờ tướng
 from .assets import XIANGQI_BOARD_IMG
 
 class BoardUI:
     """
-    Lớp này chịu trách nhiệm vẽ bàn cờ, quân cờ,
-    và xử lý input của người chơi (click chuột) trên bàn cờ.
+    Phiên bản BoardUI hỗ trợ P2P Network.
     """
-    def __init__(self, screen: pygame.Surface, game_logic: Board, piece_assets: dict):
+    def __init__(self, screen: pygame.Surface, game_logic: Board, piece_assets: dict, network_manager=None, my_role=None):
         self.screen = screen
         self.game_logic = game_logic
         self.piece_assets = piece_assets
         
+        # Network
+        self.network_manager = network_manager
+        self.my_role = my_role # 'host' hoặc 'client'
+        
+        # Xác định màu quân của mình (Host đi Trắng/Đỏ, Client đi Đen)
+        # (Logic này có thể tùy chỉnh, tạm thời quy ước như vậy)
+        self.my_color = None
+        if self.my_role == 'host':
+            self.my_color = 'white' if game_logic.game_type == 'chess' else 'red'
+        elif self.my_role == 'client':
+            self.my_color = 'black'
+        
         self.rows = self.game_logic.rows
         self.cols = self.game_logic.cols
         
-        # --- (Xóa code tính square_size cũ) ---
+        self.selected_piece_pos = None
+        self.possible_moves = []
         
-        self.selected_piece_pos = None # Vị trí (row, col) của quân đang được chọn
-        self.possible_moves = []       # Các nước đi hợp lệ cho quân đang chọn
-        
-        # Thêm font dự phòng (cho trường hợp không tải được ảnh)
         self.fallback_font = pygame.font.Font(None, 30) 
 
     def handle_events(self, event: pygame.event.Event):
-        """Xử lý click chuột để chọn/di chuyển quân."""
+        """Xử lý click chuột và gửi nước đi qua mạng."""
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1: # Click chuột trái
+                # 1. Nếu đang chơi Online mà chưa đến lượt hoặc chọn sai màu -> Chặn (Tùy chọn)
+                # Hiện tại mình để mở (Sandbox) để test cho dễ, sau này có thể uncomment dòng dưới:
+                # if self.network_manager and self.game_logic.turn != self.my_color: return
+
                 pos = pygame.mouse.get_pos()
                 
-                # --- SỬA LOGIC CLICK CHUỘT ---
+                # Tính toán tọa độ click
                 if self.game_logic.game_type == 'chess':
-                    # Logic Cờ Vua (tính theo ô)
                     col = pos[0] // (WIDTH // self.cols)
                     row = pos[1] // (HEIGHT // self.rows)
                 else:
-                    # Logic Cờ Tướng (tính giao điểm gần nhất)
-                    # (Đây là phép toán tìm giao điểm gần nhất với cú click)
                     col = round((pos[0] - PADDING_X) / SQUARE_SIZE_W)
                     row = round((pos[1] - PADDING_Y) / SQUARE_SIZE_H)
-                # -----------------------------
                 
-                # Đảm bảo click nằm trong bàn cờ
                 if 0 <= row < self.rows and 0 <= col < self.cols:
                     clicked_pos = (row, col)
 
                     if self.selected_piece_pos:
-                        # --- Đã có quân được chọn -> Đây là nước đi ---
+                        # --- ĐÃ CHỌN QUÂN -> THỰC HIỆN NƯỚC ĐI ---
                         from_pos = self.selected_piece_pos
                         to_pos = clicked_pos
                         
                         if to_pos in self.possible_moves:
-                            print(f"Di chuyển hợp lệ từ {from_pos} đến {to_pos}")
+                            # 1. Di chuyển trên máy mình
                             self.game_logic.move_piece(from_pos, to_pos)
+                            
+                            # 2. GỬI NƯỚC ĐI QUA MẠNG (QUAN TRỌNG)
+                            if self.network_manager:
+                                move_data = {
+                                    "type": "move",
+                                    "from": from_pos,
+                                    "to": to_pos,
+                                    "game_type": self.game_logic.game_type
+                                }
+                                self.network_manager.send_to_p2p(move_data)
+                                print(f"[P2P] Đã gửi nước đi: {move_data}")
+
                         else:
+                            # Logic chọn lại quân khác
                             new_piece = self.game_logic.get_piece(clicked_pos)
-                            # (Đã sửa: dùng .get_piece() cho cả 2)
-                            if new_piece and new_piece.color == self.game_logic.get_piece(from_pos).color:
-                                # Chọn quân khác cùng màu
+                            current_piece = self.game_logic.get_piece(from_pos)
+                            if new_piece and current_piece and new_piece.color == current_piece.color:
                                 self.selected_piece_pos = clicked_pos
-                                print(f"Đổi chọn quân: {new_piece} tại {clicked_pos}")
                                 self.possible_moves = new_piece.valid_moves(self.game_logic.board, clicked_pos)
-                                print("Nước đi hợp lệ:", self.possible_moves)
                                 return 
-                            else:
-                                print(f"Nước đi không hợp lệ: {from_pos} -> {to_pos}")
                         
-                        # Bỏ chọn
                         self.selected_piece_pos = None
                         self.possible_moves = []
                         
                     else:
-                        # --- Đây là lần click đầu tiên -> Chọn quân ---
+                        # --- CHƯA CHỌN -> CHỌN QUÂN ---
                         piece = self.game_logic.get_piece(clicked_pos)
-                        if piece: # và piece.color == lượt_hiện_tại (sẽ thêm sau)
+                        if piece:
+                            # Nếu Online: Chỉ cho phép chọn quân của mình
+                            if self.network_manager and self.my_color and piece.color != self.my_color:
+                                print(f"Bạn chỉ được điều khiển quân màu {self.my_color}")
+                                return
+
                             self.selected_piece_pos = clicked_pos
-                            print(f"Đã chọn quân: {piece} tại {clicked_pos}")
                             self.possible_moves = piece.valid_moves(self.game_logic.board, clicked_pos)
-                            print("Nước đi hợp lệ:", self.possible_moves)
-                        else:
-                            print(f"Click vào ô trống: {clicked_pos}")
 
     def update(self):
-        """Cập nhật logic game (nếu có animation hoặc tính toán gì đó)."""
-        pass # (Chúng ta sẽ thêm animation di chuyển quân cờ vào đây sau)
+        """Cập nhật logic: Lắng nghe nước đi từ đối thủ."""
+        if self.network_manager:
+            # Kiểm tra xem có tin nhắn nào trong hàng đợi không
+            while not self.network_manager.p2p_queue.empty():
+                try:
+                    msg = self.network_manager.p2p_queue.get_nowait()
+                    
+                    # Xử lý tin nhắn loại "move"
+                    if msg.get("type") == "move":
+                        from_pos = tuple(msg["from"]) # JSON trả về list, cần ép kiểu về tuple
+                        to_pos = tuple(msg["to"])
+                        
+                        print(f"[P2P] Nhận nước đi từ đối thủ: {from_pos} -> {to_pos}")
+                        # Thực hiện nước đi trên bàn cờ mình
+                        self.game_logic.move_piece(from_pos, to_pos)
+                        
+                except Exception as e:
+                    print(f"Lỗi xử lý data mạng: {e}")
 
     def draw(self):
-        """Vẽ mọi thứ của màn hình game: nền, quân cờ, highlight."""
+        """Vẽ giao diện."""
         self.draw_board_squares()
-        self.draw_highlights() # Vẽ highlight trước quân cờ
+        self.draw_highlights()
         self.draw_pieces()
         
+    # --- GIỮ NGUYÊN CÁC HÀM VẼ CŨ CỦA BẠN ---
     def draw_board_squares(self):
-        """Vẽ các ô sáng/tối (Cờ Vua) hoặc nền (Cờ Tướng)."""
-        
-        # --- SỬA LOGIC VẼ NỀN ---
         if self.game_logic.game_type == 'chess':
-            # Vẽ ô Cờ Vua
             square_w = WIDTH // self.cols
             square_h = HEIGHT // self.rows
             for r in range(self.rows):
                 for c in range(self.cols):
                     color = LIGHT_SQUARE_COLOR if (r + c) % 2 == 0 else DARK_SQUARE_COLOR
-                    pygame.draw.rect(
-                        self.screen, color, 
-                        (c * square_w, r * square_h, square_w, square_h)
-                    )
+                    pygame.draw.rect(self.screen, color, (c * square_w, r * square_h, square_w, square_h))
         else: 
-            # Vẽ nền Cờ Tướng
             if XIANGQI_BOARD_IMG:
-                # 1. Vẽ ảnh nền bàn cờ
                 self.screen.blit(XIANGQI_BOARD_IMG, (0, 0))
             else:
-                # 2. Dự phòng: Tô màu be nếu không có ảnh
                 self.screen.fill(LIGHT_SQUARE_COLOR)
-                # (Thiếu code vẽ đường kẻ, nên dùng ảnh nền là tốt nhất)
 
     def draw_pieces(self):
-        """Vẽ tất cả quân cờ lên bàn cờ."""
         board_state_symbols = self.game_logic.get_board_state()
-        
         for r in range(self.rows):
             for c in range(self.cols):
                 symbol = board_state_symbols[r][c]
                 if symbol:
                     image = self.piece_assets.get(symbol)
-                    
-                    # --- SỬA LOGIC VẼ QUÂN CỜ ---
                     if image:
                         if self.game_logic.game_type == 'chess':
-                            # Logic Cờ Vua (căn giữa ô)
                             square_w = WIDTH // self.cols
                             square_h = HEIGHT // self.rows
-                            x_pos = c * square_w
-                            y_pos = r * square_h
-                            x_offset = (square_w - image.get_width()) // 2
-                            y_offset = (square_h - image.get_height()) // 2
-                            self.screen.blit(image, (x_pos + x_offset, y_pos + y_offset))
-                        
-                        else: # game_type == 'xiangqi'
-                            # Logic Cờ Tướng (căn giữa GIAO ĐIỂM)
-                            corner_x = PADDING_X + c * SQUARE_SIZE_W
-                            corner_y = PADDING_Y + r * SQUARE_SIZE_H
-                            
-                            blit_x = corner_x - image.get_width() // 2
-                            blit_y = corner_y - image.get_height() // 2
-                            
-                            self.screen.blit(image, (blit_x, blit_y))
-                            
-                    else:
-                        # Vẽ chữ dự phòng (nếu không tìm thấy ảnh)
-                        text_surface = self.fallback_font.render(symbol, True, (255, 0, 0))
-                        if self.game_logic.game_type == 'chess':
-                            x_pos = c * (WIDTH // self.cols) + 10
-                            y_pos = r * (HEIGHT // self.rows) + 10
-                            self.screen.blit(text_surface, (x_pos, y_pos))
+                            x_pos = c * square_w + (square_w - image.get_width()) // 2
+                            y_pos = r * square_h + (square_h - image.get_height()) // 2
+                            self.screen.blit(image, (x_pos, y_pos))
                         else:
                             corner_x = PADDING_X + c * SQUARE_SIZE_W
                             corner_y = PADDING_Y + r * SQUARE_SIZE_H
-                            self.screen.blit(text_surface, (corner_x - 10, corner_y - 10))
+                            self.screen.blit(image, (corner_x - image.get_width() // 2, corner_y - image.get_height() // 2))
+                    else:
+                        text = self.fallback_font.render(symbol, True, (255,0,0))
+                        self.screen.blit(text, (c*50, r*50)) # Fallback đơn giản
 
     def draw_highlights(self):
-        """Vẽ highlight cho ô đang chọn và các nước đi hợp lệ."""
-        
-        # --- SỬA LOGIC VẼ HIGHLIGHT ---
         if self.game_logic.game_type == 'chess':
             square_w = WIDTH // self.cols
             square_h = HEIGHT // self.rows
-            
-            # Vẽ các nước đi hợp lệ (vòng tròn)
             if self.possible_moves:
-                for move in self.possible_moves:
-                    r, c = move
-                    move_surf = pygame.Surface((square_w, square_h), pygame.SRCALPHA)
-                    move_surf.set_alpha(120) 
-                    pygame.draw.circle(move_surf, (0, 100, 0), (square_w // 2, square_h // 2), 20)
-                    self.screen.blit(move_surf, (c * square_w, r * square_h))
-            
-            # Vẽ ô đang được chọn
+                for r, c in self.possible_moves:
+                    s = pygame.Surface((square_w, square_h), pygame.SRCALPHA)
+                    pygame.draw.circle(s, (0, 100, 0, 120), (square_w//2, square_h//2), 15)
+                    self.screen.blit(s, (c*square_w, r*square_h))
             if self.selected_piece_pos:
                 r, c = self.selected_piece_pos
-                highlight_surf = pygame.Surface((square_w, square_h))
-                highlight_surf.set_alpha(100)
-                highlight_surf.fill(HIGHLIGHT_COLOR) 
-                self.screen.blit(highlight_surf, (c * square_w, r * square_h))
-                
-        else: # game_type == 'xiangqi'
-            
-            # Vẽ các nước đi hợp lệ (vòng tròn trên giao điểm)
+                s = pygame.Surface((square_w, square_h), pygame.SRCALPHA)
+                s.fill((*HIGHLIGHT_COLOR, 100))
+                self.screen.blit(s, (c*square_w, r*square_h))
+        else:
             if self.possible_moves:
-                for move in self.possible_moves:
-                    r, c = move
-                    corner_x = PADDING_X + c * SQUARE_SIZE_W
-                    corner_y = PADDING_Y + r * SQUARE_SIZE_H
-                    
-                    move_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-                    move_surf.set_alpha(120) 
-                    pygame.draw.circle(move_surf, (0, 100, 0), (corner_x, corner_y), 20)
-                    self.screen.blit(move_surf, (0, 0))
-
-            # Vẽ ô đang được chọn (hình vuông trên giao điểm)
+                for r, c in self.possible_moves:
+                    cx, cy = PADDING_X + c * SQUARE_SIZE_W, PADDING_Y + r * SQUARE_SIZE_H
+                    pygame.draw.circle(self.screen, (0, 200, 0), (cx, cy), 10)
             if self.selected_piece_pos:
                 r, c = self.selected_piece_pos
-                corner_x = PADDING_X + c * SQUARE_SIZE_W
-                corner_y = PADDING_Y + r * SQUARE_SIZE_H
-                
-                highlight_surf = pygame.Surface((SQUARE_SIZE_W, SQUARE_SIZE_H), pygame.SRCALPHA)
-                highlight_surf.set_alpha(100)
-                highlight_surf.fill(HIGHLIGHT_COLOR) 
-                # Căn giữa highlight trên giao điểm
-                self.screen.blit(highlight_surf, (corner_x - SQUARE_SIZE_W / 2, corner_y - SQUARE_SIZE_H / 2))
+                cx, cy = PADDING_X + c * SQUARE_SIZE_W, PADDING_Y + r * SQUARE_SIZE_H
+                pygame.draw.circle(self.screen, HIGHLIGHT_COLOR, (cx, cy), 15, 2)
