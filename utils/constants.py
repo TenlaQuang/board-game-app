@@ -2,7 +2,7 @@ import os
 import pygame
 
 # --- KÍCH THƯỚC CỬA SỔ ---
-WIDTH = 1120  
+WIDTH = 1100  
 HEIGHT = 800
 FPS = 60
 
