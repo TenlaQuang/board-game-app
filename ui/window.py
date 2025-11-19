@@ -8,7 +8,7 @@ from utils.constants import (
 )
 from core import Board
 
-# Import các Scene
+# --- IMPORT CÁC SCENE ---
 from .menu import MainMenu
 from .board_ui import BoardUI
 from .chess_menu import ChessMenu      
@@ -97,6 +97,7 @@ class App:
                 elif self.state == 'ONLINE_MENU':
                     if self.online_menu:
                         self.online_menu.current_game_type = self.selected_game_type
+                        action = self.online_menu.handle_events(event)
                         action = self.online_menu.handle_events(event)
                         
                         if action == 'BACK':

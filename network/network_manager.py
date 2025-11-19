@@ -21,6 +21,7 @@ class NetworkManager:
         self._polling = False
         self._poll_callback = None
         self.is_host = False 
+        self.current_lobby_state = "menu"
         
         # Biến lưu trữ IP Radmin/LAN của chính máy này
         try:

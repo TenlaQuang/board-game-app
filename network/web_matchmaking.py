@@ -38,7 +38,7 @@ def get_radmin_ip() -> Optional[str]:
 # ==========================
 # HEARTBEAT
 # ==========================
-def send_heartbeat(username: str, p2p_port: int):
+def send_heartbeat(username: str, p2p_port: int, lobby_state: str = "menu"):
     radmin_ip = get_radmin_ip()
 
     url = f"{WEB_SERVER}/heartbeat"
@@ -46,11 +46,11 @@ def send_heartbeat(username: str, p2p_port: int):
         requests.post(url, json={
             "username": username,
             "p2p_port": p2p_port,
-            "ip": radmin_ip # Gửi IP Radmin (ưu tiên kết nối)
+            "ip": radmin_ip,
+            "lobby_state": lobby_state # <--- MỚI: Gửi trạng thái lên
         }, timeout=5)
     except:
         pass
-
 
 # ==========================
 # LẤY DANH SÁCH USER ONLINE (HÀM BỊ LỖI Ở LẦN TRƯỚC)
