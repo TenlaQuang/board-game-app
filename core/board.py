@@ -7,7 +7,6 @@ from core.piece import (
 class Board:
     def __init__(self, game_type: str = 'chess'):
         self.game_type = game_type
-        self.board: List[List[Optional[Piece]]] = []
         
         # --- LOGIC ONLINE & LƯỢT CHƠI ---
         self.turn = 'white'   # Lượt hiện tại ('white' hoặc 'black')
@@ -23,7 +22,16 @@ class Board:
         else:
             self.rows, self.cols = 10, 9 # Cờ tướng
             
+        self.board: List[List[Optional[Piece]]] = []
         self.setup_board()
+
+    # --- [FIX] MAGIC METHODS ĐỂ TRÁNH LỖI LEN() & INDEXING ---
+    def __len__(self):
+        return self.rows
+
+    def __getitem__(self, index):
+        return self.board[index]
+    # ---------------------------------------------------------
 
     def setup_board(self):
         """Khởi tạo bàn cờ với vị trí ban đầu của các quân cờ."""
@@ -45,7 +53,7 @@ class Board:
         
         elif self.game_type == 'chinese_chess':
             # === ĐẶT QUÂN CỜ TƯỚNG ===
-            # Đen (hàng 0-4)
+            # Đen
             self.board[0] = [
                 Chariot('black', 'C'), Horse('black', 'H'), Elephant('black', 'E'), Advisor('black', 'A'),
                 General('black', 'G'), Advisor('black', 'A'), Elephant('black', 'E'), Horse('black', 'H'), Chariot('black', 'C')
@@ -53,7 +61,7 @@ class Board:
             self.board[2] = [None, Cannon('black', 'O'), None, None, None, None, None, Cannon('black', 'O'), None]
             self.board[3] = [Soldier('black', 'S'), None, Soldier('black', 'S'), None, Soldier('black', 'S'), None, Soldier('black', 'S'), None, Soldier('black', 'S')]
             
-            # Đỏ ('white') (hàng 5-9)
+            # Đỏ ('white')
             self.board[9] = [
                 Chariot('white', 'C'), Horse('white', 'H'), Elephant('white', 'E'), Advisor('white', 'A'),
                 General('white', 'G'), Advisor('white', 'A'), Elephant('white', 'E'), Horse('white', 'H'), Chariot('white', 'C')
@@ -63,14 +71,30 @@ class Board:
 
     # --- CÁC HÀM HELPER ---
     def get_piece(self, pos: Tuple[int, int]) -> Optional[Piece]:
-        """Lấy quân cờ tại vị trí (row, col)."""
         row, col = pos
         if 0 <= row < self.rows and 0 <= col < self.cols:
             return self.board[row][col]
         return None
 
+    # =================================================================
+    # [NEW] HÀM TÌM VỊ TRÍ VUA (FIX LỖI ATTRIBUTE ERROR)
+    # =================================================================
+    def find_king_pos(self, color: str) -> Optional[Tuple[int, int]]:
+        """Tìm toạ độ (row, col) của Vua/Tướng phe 'color'."""
+        # K = King (Cờ vua), G = General (Cờ tướng)
+        target_symbols = ['K', 'G'] 
+        
+        for r in range(self.rows):
+            for c in range(self.cols):
+                piece = self.board[r][c]
+                if piece and piece.color == color:
+                    # Kiểm tra nếu quân cờ là Vua hoặc Tướng
+                    if piece.symbol.upper() in target_symbols:
+                        return (r, c)
+        return None
+    # =================================================================
+
     def get_board_state(self):
-        """Trả về lưới ký tự đại diện cho bàn cờ (để vẽ)."""
         state = [['' for _ in range(self.cols)] for _ in range(self.rows)]
         for r in range(self.rows):
             for c in range(self.cols):
@@ -81,23 +105,17 @@ class Board:
 
     # --- LOGIC ONLINE & LƯỢT CHƠI ---
     def set_player_color(self, color: str):
-        """Thiết lập màu cho người chơi này."""
         self.my_color = color
 
     def is_my_turn(self) -> bool:
-        """Kiểm tra có phải lượt của mình không."""
-        if self.my_color is None:
-            return True
+        if self.my_color is None: return True
         return self.turn == self.my_color
 
     def switch_turn(self):
-        """Đổi lượt chơi."""
         self.turn = 'black' if self.turn == 'white' else 'white'
 
     def move_piece(self, from_pos: Tuple[int, int], to_pos: Tuple[int, int]):
-        """Di chuyển quân cờ, kiểm tra ăn Vua và đổi lượt."""
-        if self.game_over: 
-            return 
+        if self.game_over: return 
         
         from_row, from_col = from_pos
         to_row, to_col = to_pos
@@ -106,25 +124,23 @@ class Board:
         target_piece = self.get_piece(to_pos)
         
         if piece:
-            # --- [SỬA] KIỂM TRA ĂN VUA/TƯỚNG (WIN CONDITION) ---
-            if target_piece:
-                # K/k = King (Vua), G/g = General (Tướng)
-                if target_piece.symbol.upper() in ['K', 'G']:
-                    self.winner = self.turn # Người đang đi là người thắng
-                    self.game_over = True
-                    print(f"GAME OVER! {self.turn.upper()} thắng!")
-            # ---------------------------------------------------
+            # --- CHECK WIN (ĂN VUA) ---
+            if target_piece and target_piece.symbol.upper() in ['K', 'G']:
+                self.winner = self.turn
+                self.game_over = True
+                print(f"GAME OVER! {self.turn.upper()} thắng!")
+            # --------------------------
 
-            # Di chuyển quân
             self.board[to_row][to_col] = piece
             self.board[from_row][from_col] = None
-            piece.has_moved = True
             
-            # Chỉ đổi lượt nếu game CHƯA kết thúc
+            if hasattr(piece, 'update_position'): piece.update_position((to_row, to_col))
+            elif hasattr(piece, 'has_moved'): piece.has_moved = True
+            
             if not self.game_over:
                 self.switch_turn()
-                print(f"Đã đi từ {from_pos} đến {to_pos}. Lượt tiếp theo: {self.turn}")
+                print(f"Đã đi: {from_pos}->{to_pos}. Lượt: {self.turn}")
             else:
                 print("Game đã kết thúc.")
         else:
-            print(f"Lỗi: Không có quân cờ tại {from_pos}")
+            print(f"Lỗi: Không có quân tại {from_pos}")
