@@ -139,8 +139,6 @@ class NetworkManager:
         if self.p2p_socket:
             try: self.p2p_socket.sendall((json.dumps(data)+"\n").encode('utf-8'))
             except: pass
-
-    # --- 6. [FIX] CÁC HÀM CHAT & COMMAND CẦN THIẾT ---
     def send_chat(self, message):
         """Gửi tin nhắn chat."""
         self.send_to_p2p({

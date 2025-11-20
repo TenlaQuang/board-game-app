@@ -1,10 +1,8 @@
-# network/web_matchmaking.py (Bản Chuẩn - Khớp với Server mới)
+
 import requests
 import subprocess
 import re
 from typing import Optional, Dict
-
-# !!! LƯU Ý: Đảm bảo link này là link Render của bạn !!!
 WEB_SERVER = "https://board-game-app-sv.onrender.com"
 
 # ==========================
@@ -17,11 +15,9 @@ def get_radmin_ip() -> Optional[str]:
         cmd = 'powershell -command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -like \'26.*\'} | Select-Object -ExpandProperty IPAddress"'
         output = subprocess.check_output(cmd, shell=True, encoding="utf8", timeout=3).strip()
         
-        # Lấy dòng đầu tiên nếu có nhiều dòng
         if output:
             return output.splitlines()[0].strip()
     except:
-        # Fallback: Dùng ipconfig nếu PowerShell lỗi
         try:
             output = subprocess.check_output("ipconfig", shell=True, encoding="utf8")
             match = re.search(r"IPv4 Address[^\:]*: (26\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})", output)
