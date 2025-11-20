@@ -1,6 +1,7 @@
 from typing import List, Tuple, Dict, Optional
 from .board import Board
 from .move_validator import MoveValidator
+from .piece import Pawn  # Import để kiểm tra quân Tốt
 
 class GameState:
     """
@@ -8,7 +9,7 @@ class GameState:
     """
     def __init__(self, game_type: str = 'chess'):
         self.board = Board(game_type)
-        self.current_turn = 'white'  # White/Red đi trước
+        self.current_turn = 'white' # White/Red đi trước
         
         # --- LOGIC ONLINE ---
         self.my_color: Optional[str] = None # 'white' hoặc 'black'. None = Chơi 2 người 1 máy
@@ -18,6 +19,10 @@ class GameState:
         self.winner: str = None  # 'white', 'black', or 'draw'
         self.is_check = False
         self.is_checkmate = False
+
+        # --- LOGIC PHONG CẤP (PAWN PROMOTION) ---
+        self.promotion_pending: bool = False  # True khi có Tốt chờ phong cấp
+        self.promotion_pos: Optional[Tuple[int, int]] = None # Vị trí Tốt chờ phong cấp
 
     # =========================================================================
     # [QUAN TRỌNG] CÁC HÀM ỦY QUYỀN (PROXY) CHO BOARD UI GỌI KHÔNG BỊ LỖI
@@ -67,6 +72,10 @@ class GameState:
     def make_move(self, from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> bool:
         """Thực hiện nước đi nếu hợp lệ, cập nhật trạng thái."""
         
+        # 0. Nếu đang chờ phong cấp, không cho đi nước khác
+        if self.promotion_pending:
+            return False
+
         # 1. Kiểm tra game over
         if self.winner:
             return False
@@ -85,35 +94,84 @@ class GameState:
             # Lưu lịch sử
             self.history.append({'from': from_pos, 'to': to_pos})
             
-            # Xác định quân bị ăn (nếu có)
-            captured = self.board.get_piece(to_pos)
+            # Xác định quân bị ăn (nếu có) - logic kiểm tra ăn Vua ở bên dưới
             
             # Di chuyển quân cờ
             self.board.move_piece(from_pos, to_pos)
 
-            # --- [FIX LỖI .type] LOGIC ĂN VUA LÀ THẮNG LUÔN ---
-            # Sửa .type thành .symbol
-            if captured and captured.symbol.upper() in ['K', 'G']:
-                self.winner = self.current_turn
-                return True
-            # ----------------------------------------
+            # --- LOGIC PHONG CẤP ---
+            # Kiểm tra nếu quân vừa đi là Tốt và đến hàng cuối
+            if isinstance(piece, Pawn) and piece.can_promote(to_pos[0]):
+                self.promotion_pending = True
+                self.promotion_pos = to_pos
+                # [QUAN TRỌNG] Chưa đổi lượt, chưa checkmate, chờ người chơi chọn quân
+                return True 
 
-            # Kiểm tra check/checkmate (Nếu chưa thắng do ăn vua)
-            if not self.winner:
-                opponent = self.opponent_color()
-                self.is_check = self.validator.is_in_check(self.board, opponent)
-                
-                # Nếu muốn logic Checkmate chuẩn thì bật dòng này
-                self.is_checkmate = self.is_check and self.validator.is_checkmate(self.board, opponent)
-
-                if self.is_checkmate:
-                    self.winner = self.current_turn
-
-            # Đổi lượt
-            self.current_turn = self.opponent_color()
+            # Nếu không phong cấp, kết thúc lượt bình thường
+            self._finalize_turn(to_pos)
             return True
         
         return False
+
+    def apply_promotion(self, promotion_symbol: str) -> bool:
+        """
+        Xử lý khi người chơi chọn quân để phong cấp (từ UI).
+        promotion_symbol: 'Q', 'R', 'B', 'N'
+        """
+        if not self.promotion_pending or not self.promotion_pos:
+            return False
+
+        row, col = self.promotion_pos
+        pawn = self.board.get_piece(self.promotion_pos)
+        
+        if pawn:
+            # Tạo quân mới (Hậu, Xe, ...) giữ nguyên màu của Tốt
+            new_piece = pawn.promote(promotion_symbol)
+            # Cập nhật thẳng vào board (truy cập trực tiếp mảng 2 chiều của object Board)
+            self.board.board[row][col] = new_piece
+        
+        # Reset trạng thái phong cấp
+        self.promotion_pending = False
+        self.promotion_pos = None
+
+        # Kết thúc lượt (kiểm tra checkmate, đổi lượt)
+        self._finalize_turn((row, col))
+        return True
+
+    def _finalize_turn(self, last_move_dest: Tuple[int, int]):
+        """Logic chung để xử lý sau khi một nước đi hoàn tất (Move hoặc Promote)."""
+        
+        # --- [LOGIC ĂN VUA LÀ THẮNG LUÔN] ---
+        # Kiểm tra xem nước đi vừa rồi có ăn mất Vua/Tướng địch không (dựa vào trạng thái hiện tại của bàn cờ)
+        # Tuy nhiên, thông thường logic "bị ăn" đã xử lý lúc move. 
+        # Ở đây ta kiểm tra lại nếu cần, hoặc logic cũ kiểm tra captured.
+        # Để đơn giản và nhất quán, ta check xem Vua đối phương còn trên bàn cờ không.
+        
+        opponent_color = self.opponent_color()
+        enemy_king_found = False
+        for r in range(self.rows):
+            for c in range(self.cols):
+                p = self.board.get_piece((r, c))
+                if p and p.color == opponent_color and p.symbol.upper() in ['K', 'G']:
+                    enemy_king_found = True
+                    break
+            if enemy_king_found:
+                break
+        
+        if not enemy_king_found:
+            self.winner = self.current_turn
+            return
+
+        # Kiểm tra check/checkmate
+        self.is_check = self.validator.is_in_check(self.board, opponent_color)
+        
+        # Checkmate
+        if self.is_check and self.validator.is_checkmate(self.board, opponent_color):
+            self.winner = self.current_turn
+
+        # Đổi lượt
+        if not self.winner:
+            self.current_turn = opponent_color
 
     def opponent_color(self) -> str:
         return 'black' if self.current_turn == 'white' else 'white'
@@ -125,7 +183,9 @@ class GameState:
             'turn': self.current_turn,
             'is_check': self.is_check,
             'is_checkmate': self.is_checkmate,
-            'winner': self.winner
+            'winner': self.winner,
+            'promotion_pending': self.promotion_pending, # Gửi thêm trạng thái này
+            'promotion_pos': self.promotion_pos
         }
 
     def reset(self) -> None:
