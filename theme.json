@@ -108,5 +108,23 @@
             "size": "16",
             "regular_path": "ui/assets/fonts/font_vi.ttf"
         }
+    },
+    "#promotion_btn": {
+    "colours": {
+        "normal_bg": "#4a77bd",
+        "hovered_bg": "#6a95d8",
+        "selected_bg": "#345d96"
+    },
+    "misc": {
+        "shape": "rounded_rectangle",
+        "shape_corner_radius": 8
     }
+    },
+    "#promotion_icon": {
+        "misc": {
+            "shadow_width": 0
+        }
+    }
+
+
 }
