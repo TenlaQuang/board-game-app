@@ -109,6 +109,88 @@
             "regular_path": "ui/assets/fonts/font_vi.ttf"
         }
     },
+
+    "#btn_chess": {
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "normal_border": "#00000000",
+            "hovered_border": "#00000000",
+            "active_border": "#00000000"
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
+    },
+
+    "#btn_xiangqi": {
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "normal_border": "#00000000",
+            "hovered_border": "#00000000",
+            "active_border": "#00000000"
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
+    },
+
+    "#btn_quit": {
+        "colours": {
+            "normal_bg": "#aa3a3a80",    
+            "hovered_bg": "#ff4d4dcc",  
+            "active_bg": "#ff4d4d",
+            "normal_border": "#ff6666",
+            "hovered_border": "#FFFFFFFF",
+            "active_border": "#FFFFFFFF",  
+            "normal_text": "#FFFFFF",
+            "hovered_text": "#FFFFFF"      
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "corner_radius": "10",
+            "border_width": "2",
+            "shadow_width": "0"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "18",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        }
+    },
+
+    "#lbl_chess_text": {
+        "colours": { 
+            "normal_text": "#00FFFF",  
+            "hovered_text": "#FFFFFF"  
+        }, 
+        "font": { 
+            "name": "Arial", 
+            "size": "24", 
+            "bold": "1", 
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "shadow": "1"             
+        }
+    },
+
+    "#lbl_xiangqi_text": {
+        "colours": { 
+            "normal_text": "#00FF00",  
+            "hovered_text": "#FFFFFF" 
+        },
+        "font": { 
+            "name": "Arial", 
+            "size": "24", 
+            "bold": "1", 
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "shadow": "1"              
+        }
+    },
     "#promotion_btn": {
     "colours": {
         "normal_bg": "#4a77bd",
