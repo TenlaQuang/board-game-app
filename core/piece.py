@@ -1,4 +1,3 @@
-# core/piece.py
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
@@ -79,6 +78,26 @@ class Pawn(Piece):  # Tốt (Chess)
 
         # En passant (cần thêm logic từ game_state nếu cần)
         return moves
+
+    def can_promote(self, row: int) -> bool:
+        """
+        Kiểm tra xem Tốt có ở vị trí phong cấp không.
+        - White phong cấp ở hàng 0.
+        - Black phong cấp ở hàng 7 (với bàn cờ 8x8).
+        """
+        if self.color == 'white':
+            return row == 0
+        else:
+            # Giả định bàn cờ chuẩn 8x8, hàng cuối là 7
+            return row == 7
+
+    def promote(self, new_symbol: str) -> 'Piece':
+        """
+        Trả về một quân cờ mới dựa trên lựa chọn phong cấp.
+        new_symbol: 'Q', 'R', 'B', 'N'
+        """
+        # Gọi factory method create_piece (được định nghĩa bên dưới)
+        return create_piece(new_symbol, self.color)
 
 
 class Rook(Piece):  # Xe (Chess)
