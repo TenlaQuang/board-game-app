@@ -40,7 +40,7 @@ class App:
         # Nạp theme.json
         self.ui_manager = pygame_gui.UIManager((WIDTH, HEIGHT), 'theme.json')
 
-        # --- 1. TẢI HÌNH NỀN TRỰC TIẾP ---
+        # --- 1. TẢI HÌNH NỀN TRỰC TIẾP (MAIN MENU) ---
         try:
             bg_path = os.path.join("ui", "assets", "images", "background.png")
             if os.path.exists(bg_path):
@@ -66,7 +66,7 @@ class App:
         self.game_screen = None
         self.selected_game_type = 'chess' 
 
-        # Backgrounds cho các menu con
+        # Backgrounds động (chỉ dùng khi cần hiệu ứng)
         self.chess_bg = AnimatedBackground(WIDTH, HEIGHT, 80, 120, LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR)
         self.xiangqi_bg = AnimatedBackground(WIDTH, HEIGHT, 80, 150, XIANGQI_LIGHT_BACKGROUND_COLOR, XIANGQI_DARK_BACKGROUND_COLOR)
 
@@ -149,23 +149,32 @@ class App:
             self.ui_manager.update(time_delta)
             
             if self.state == 'MAIN_MENU':
-                # 1. Vẽ nền
+                # 1. Vẽ nền Main Menu
                 if self.main_background: 
                     self.screen.blit(self.main_background, (0, 0))
                 else: 
                     self.screen.fill((30, 30, 30))
-                
-                # 2. VẼ HIỆU ỨNG 3D CỦA MENU (QUÂN CỜ BAY)
-                # Đây là dòng quan trọng nhất để hiện hình ảnh quân cờ
                 self.main_menu.draw_custom_effects() 
             
             elif self.state == 'CHESS_MENU':
-                self.chess_bg.update(time_delta); self.chess_bg.draw(self.screen)
+                # --- ĐOẠN ĐÃ SỬA ---
+                # CŨ: self.chess_bg.update(time_delta); self.chess_bg.draw(self.screen)
+                # MỚI: Gọi hàm draw của menu để vẽ ảnh tĩnh poster
+                self.chess_menu.draw()
+
             elif self.state == 'XIANGQI_MENU':
                 self.xiangqi_bg.update(time_delta); self.xiangqi_bg.draw(self.screen)
+            
             elif self.state == 'ONLINE_MENU':
                 self.screen.fill((20, 25, 40))
+            
             elif self.state == 'GAME_SCREEN' and self.game_screen:
+                # (Tùy chọn) Nếu bạn muốn nền động KHI CHƠI GAME, 
+                # bạn có thể bật dòng này lên trước khi vẽ game_screen:
+                # if self.selected_game_type == 'chess':
+                #     self.chess_bg.update(time_delta)
+                #     self.chess_bg.draw(self.screen)
+                
                 self.game_screen.update() 
                 self.game_screen.draw()
 
