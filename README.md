@@ -4,6 +4,7 @@ Dự án game cờ vua và cờ tướng peer-to-peer viết bằng Python + Pyg
 
 ## Cấu trúc thư mục
 
+- `ai/`: Chứa mô hình AI cho 2 game
 - `core/`: Logic game (bàn cờ, quân cờ, luật di chuyển)
 - `network/`: Xử lý kết nối mạng (host/client)
 - `ui/`: Giao diện pygame
@@ -14,4 +15,10 @@ Dự án game cờ vua và cờ tướng peer-to-peer viết bằng Python + Pyg
 ## Cách chạy
 
 ```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
 python main.py
+```
+
+## Tham khảo code sever giúp client trao đổi ip tại: [Repository này] {https://github.com/TenlaQuang/board-game-app-sv}
