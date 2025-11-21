@@ -21,4 +21,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Tham khảo code sever giúp client trao đổi ip tại: [Repository này] {https://github.com/TenlaQuang/board-game-app-sv}
+### Tham khảo code server giúp client trao đổi ip tại: [Repository này](https://github.com/TenlaQuang/board-game-app-sv)
+
+### Còn đây là địa chỉ web render https://board-game-app-sv.onrender.com
+server sẽ chạy dựa trên repository board-game-app-sv và luôn hoạt động để hỗ trợ app
