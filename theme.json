@@ -206,7 +206,31 @@
         "misc": {
             "shadow_width": 0
         }
+    },"#wood_btn": {
+        "images": {
+            "normal_image": { "path": "ui/assets/images/wood_btn_base.png" },
+            "hovered_image": { "path": "ui/assets/images/wood_btn_base.png" },
+            "active_image": { "path": "ui/assets/images/wood_btn_base.png" }
+        },
+        "font": {
+            "name": "Arial",
+            "size": "22",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "normal_text": "#42210B",
+            "hovered_text": "#6D3B1D",
+            "active_text": "#2A1507",
+            "selected_text": "#42210B"
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
     }
-
 
 }
