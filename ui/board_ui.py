@@ -1,4 +1,5 @@
 import json
+import threading
 import pygame
 import os
 from core.board import Board
@@ -96,10 +97,16 @@ class PromotionWindow(UIWindow):
 
 
 class BoardUI:
-    def __init__(self, screen: pygame.Surface, game_logic: Board, piece_assets: dict, board_rect, sidebar_rect=None, network_manager=None, my_role=None):
+    def __init__(self, screen: pygame.Surface, game_logic: Board, piece_assets: dict, board_rect, sidebar_rect=None, network_manager=None, my_role=None, ai_engine=None):
         self.screen = screen
         self.game_logic = game_logic
         self.piece_assets = piece_assets
+        
+        self.ai_engine = ai_engine # Lưu lại AI
+        self.is_ai_thinking = False
+        # Nếu chơi với máy, mình cầm Trắng, Máy cầm Đen
+        if self.ai_engine:
+            self.game_logic.set_player_color('white')
         
         self.board_rect = board_rect
         self.sidebar_rect = sidebar_rect
@@ -347,7 +354,14 @@ class BoardUI:
            self.game_logic.is_my_turn():
                current_color = self.game_logic.current_turn
                self._show_promotion_window(current_color)
-
+        # --- [THÊM] LOGIC CHO AI ĐI ---
+        if self.ai_engine and not self.game_logic.game_over and not self.is_ai_thinking:
+            # Nếu đến lượt Đen (máy)
+            if self.game_logic.current_turn == 'black':
+                self.is_ai_thinking = True
+                # Chạy AI trong luồng riêng để không đơ màn hình
+                threading.Thread(target=self.run_ai_move, daemon=True).start()
+        # ------------------------------
         if self.network_manager:
             while not self.network_manager.p2p_queue.empty():
                 try:
@@ -512,3 +526,23 @@ class BoardUI:
             s = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
             if self.game_logic.game_type == 'chess': s.fill(CHESS_SELECTED_COLOR); self.screen.blit(s, (rect_x, rect_y))
             else: pygame.draw.circle(s, (255, 215, 0, 200), (cell_size//2, cell_size//2), int(cell_size//2 * 0.9) + 2, 4); self.screen.blit(s, (rect_x, rect_y))
+    # --- [THÊM] HÀM CHẠY AI ---
+    def run_ai_move(self):
+        try:
+            # 1. Lấy FEN từ bàn cờ
+            fen = self.game_logic.to_fen()
+            # 2. Hỏi Stockfish
+            best_move = self.ai_engine.get_best_move(fen)
+            
+            if best_move:
+                print(f"🤖 Máy đi: {best_move}")
+                # 3. Đổi tọa độ uci (e7e5) sang tọa độ số ((1,4)->(3,4))
+                start, end, promo = self.game_logic.uci_to_coords(best_move)
+                
+                if start and end:
+                    # 4. Đi quân (Logic game)
+                    self.game_logic.move_piece(start, end, promotion=promo)
+        except Exception as e:
+            print(f"Lỗi AI: {e}")
+        
+        self.is_ai_thinking = False

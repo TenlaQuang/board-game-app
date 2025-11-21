@@ -98,8 +98,14 @@ class App:
                     action = self.chess_menu.handle_events(event)
                     if action == 'BACK_TO_MAIN':
                         self.chess_menu.hide(); self.main_menu.show(); self.state = 'MAIN_MENU'
-                    elif action == 'PLAY_OFFLINE':
-                        self.chess_menu.hide(); self._start_game_session('chess', online=False) 
+                    elif isinstance(action, tuple) and action[0] == 'PLAY_OFFLINE':
+                        _, difficulty = action # Tách lấy độ khó
+                        self.chess_menu.hide()
+                        # Truyền độ khó vào hàm start game
+                        self._start_game_session('chess', online=False, difficulty=difficulty) 
+                    # ----------------------
+                    # elif action == 'PLAY_OFFLINE':
+                    #     self.chess_menu.hide(); self._start_game_session('chess', online=False) 
                     elif action == 'PLAY_ONLINE':
                         self.chess_menu.hide(); 
                         if self.online_menu: 
@@ -185,12 +191,24 @@ class App:
         self.network_manager.shutdown()
         pygame.quit()
 
-    def _start_game_session(self, game_type, online=False):
+    # Thêm tham số difficulty=None vào hàm
+    def _start_game_session(self, game_type, online=False, difficulty=None):
         pieces_img = CHESS_PIECES if game_type == 'chess' else XIANGQI_PIECES
         game_logic = Board(game_type=game_type) 
         net_mgr = None
         role = None
         
+        # --- [THÊM] KHỞI TẠO AI ---
+        ai_engine = None
+        if not online and difficulty and game_type == 'chess':
+            try:
+                from ai.engines.stockfish_adapter import StockfishAdapter
+                ai_engine = StockfishAdapter(difficulty)
+                print(f"✅ Đã tải AI Stockfish: Mức {difficulty}")
+            except Exception as e:
+                print(f"❌ Lỗi tải AI: {e}")
+        # --------------------------
+
         if online:
             net_mgr = self.network_manager
             role = 'host' if self.network_manager.is_host else 'client'
@@ -207,6 +225,7 @@ class App:
             board_rect=board_rect,          
             sidebar_rect=sidebar_rect, 
             network_manager=net_mgr,
-            my_role=role
+            my_role=role,
+            ai_engine=ai_engine  # <--- TRUYỀN AI VÀO ĐÂY
         )
         self.state = 'GAME_SCREEN'
