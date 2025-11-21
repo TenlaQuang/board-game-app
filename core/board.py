@@ -2,14 +2,14 @@ from typing import List, Tuple, Optional
 from core.piece import (
     Piece, Pawn, Rook, Knight, Bishop, Queen, King,
     General, Advisor, Elephant, Horse, Chariot, Cannon, Soldier,
-    create_piece # Import thêm hàm factory để tạo quân mới
+    create_piece 
 )
 
 # --- [FIX QUAN TRỌNG] IMPORT ĐÚNG FILE CỦA BẠN ---
 try:
     from core.move_validator import MoveValidator
 except ImportError:
-    print("Lỗi Import: Không tìm thấy core/move_validator.py")
+    print("Lỗi Import: Không tìm thấy core/move_validator.py (Sẽ cập nhật sau)")
     MoveValidator = None 
 # -------------------------------------------------
 
@@ -25,10 +25,14 @@ class Board:
         self.winner = None    
         self.game_over = False
 
-        # --- LOGIC PHONG CẤP (Mới thêm) ---
+        # --- LOGIC PHONG CẤP ---
         self.promotion_pending = False
         self.promotion_pos = None
-        # ----------------------------------
+
+        # --- [MỚI] LƯU TRỮ LỊCH SỬ ĐỂ BẮT TỐT QUA ĐƯỜNG ---
+        # Lưu nước đi cuối cùng: {'start': (r,c), 'end': (r,c), 'piece': obj, 'color': str}
+        self.last_move = None 
+        # --------------------------------------------------
 
         if self.game_type == 'chess':
             self.rows, self.cols = 8, 8
@@ -127,9 +131,9 @@ class Board:
     def move_piece(self, from_pos: Tuple[int, int], to_pos: Tuple[int, int], promotion: str = None) -> bool:
         """
         Thực hiện nước đi. 
-        - promotion: Ký tự quân muốn phong cấp (ví dụ 'Q'), nếu có thì xử lý luôn.
+        - promotion: Ký tự quân muốn phong cấp (ví dụ 'Q').
         """
-        # 0. Nếu đang chờ phong cấp mà gọi move khác -> Chặn (trừ khi là move phong cấp tại chỗ)
+        # 0. Chặn nếu đang chờ phong cấp
         if self.promotion_pending and self.promotion_pos != to_pos:
             return False
 
@@ -142,36 +146,74 @@ class Board:
         target_piece = self.get_piece(to_pos)
         
         if piece:
-            # 1. Check win (Ăn vua)
+            # --- [MỚI] CHECK NHẬP THÀNH (CASTLING) ---
+            # Phát hiện Vua đi 2 bước
+            is_castling = False
+            if self.game_type == 'chess' and isinstance(piece, King) and abs(from_col - to_col) == 2:
+                is_castling = True
+
+            # --- [MỚI] CHECK BẮT TỐT QUA ĐƯỜNG (EN PASSANT) ---
+            # Phát hiện Tốt đi chéo sang ô trống
+            is_en_passant = False
+            en_passant_capture_pos = None
+            if self.game_type == 'chess' and isinstance(piece, Pawn):
+                if from_col != to_col and target_piece is None:
+                    is_en_passant = True
+                    # Quân bị bắt nằm ở hàng cũ (from_row), cột mới (to_col)
+                    en_passant_capture_pos = (from_row, to_col)
+
+            # 1. Xử lý ăn quân (Bình thường)
             if target_piece and target_piece.symbol.upper() in ['K', 'G']:
                 self.winner = self.current_turn 
                 self.game_over = True
                 print(f"GAME OVER! {self.winner.upper()} thắng!")
 
-            # 2. Di chuyển quân
+            # 2. Di chuyển quân chính (Vua/Tốt/...)
             self.board[to_row][to_col] = piece
             self.board[from_row][from_col] = None
             
-            # Cập nhật trạng thái quân (has_moved)
+            # 3. Cập nhật trạng thái quân (has_moved cho King/Rook)
             if hasattr(piece, 'update_position'): piece.update_position((to_row, to_col))
             elif hasattr(piece, 'has_moved'): piece.has_moved = True
             
+            # --- [MỚI] THỰC HIỆN SIDE-EFFECTS ---
+            
+            # A. Nếu là Nhập thành -> Di chuyển Xe
+            if is_castling:
+                if to_col > from_col: # Nhập thành cánh Vua (phải)
+                    rook_from = (from_row, 7); rook_to = (from_row, 5)
+                else: # Nhập thành cánh Hậu (trái)
+                    rook_from = (from_row, 0); rook_to = (from_row, 3)
+                
+                rook = self.board[rook_from[0]][rook_from[1]]
+                if rook:
+                    self.board[rook_to[0]][rook_to[1]] = rook
+                    self.board[rook_from[0]][rook_from[1]] = None
+                    if hasattr(rook, 'has_moved'): rook.has_moved = True
+                    print("Backend: Đã di chuyển Xe nhập thành.")
+
+            # B. Nếu là En Passant -> Xóa tốt đối phương
+            if is_en_passant and en_passant_capture_pos:
+                self.board[en_passant_capture_pos[0]][en_passant_capture_pos[1]] = None
+                print("Backend: Đã bắt tốt qua đường.")
+
+            # -------------------------------------
+
             # --- XỬ LÝ PHONG CẤP (PAWN PROMOTION) ---
             if self.game_type == 'chess' and isinstance(piece, Pawn):
-                # Kiểm tra nếu Tốt đi đến hàng cuối
                 if piece.can_promote(to_row):
-                    # Nếu tham số promotion được truyền vào (từ mạng hoặc logic gộp), xử lý luôn
                     if promotion:
                          self.apply_promotion(promotion, pos_override=(to_row, to_col))
+                         self._update_last_move(from_pos, to_pos, piece) # Lưu move
                          return True
                     
-                    # Nếu chưa có promotion -> Bật chế độ chờ, KHÔNG ĐỔI LƯỢT
                     self.promotion_pending = True
                     self.promotion_pos = (to_row, to_col)
                     print("Chờ phong cấp...")
                     return True
 
             if not self.game_over:
+                self._update_last_move(from_pos, to_pos, piece)
                 self.switch_turn()
                 print(f"Đã đi: {from_pos}->{to_pos}. Lượt: {self.current_turn}")
             else:
@@ -181,31 +223,40 @@ class Board:
             print(f"Lỗi: Không có quân tại {from_pos}")
             return False
 
+    def _update_last_move(self, start, end, piece):
+        """Lưu lại nước đi vừa thực hiện để check En Passant."""
+        self.last_move = {
+            'start': start,
+            'end': end,
+            'piece': piece,
+            'color': piece.color,
+            'symbol': piece.symbol
+        }
+
     def apply_promotion(self, promotion_symbol: str, pos_override: Tuple[int, int] = None) -> bool:
         """Biến Tốt thành quân khác (Hậu, Xe...)."""
-        # Lấy vị trí cần phong cấp (ưu tiên tham số truyền vào, sau đó lấy từ state)
         pos = pos_override if pos_override else self.promotion_pos
-        
-        if not pos:
-            return False
+        if not pos: return False
 
         row, col = pos
         pawn = self.board[row][col]
         
         if pawn:
-            # Tạo quân mới
             try:
                 new_piece = create_piece(promotion_symbol, pawn.color)
                 self.board[row][col] = new_piece
+                # piece mới cũng coi như đã di chuyển
+                if hasattr(new_piece, 'has_moved'): new_piece.has_moved = True 
                 print(f"Đã phong cấp thành {new_piece.symbol} tại {pos}")
             except Exception as e:
                 print(f"Lỗi phong cấp: {e}")
         
-        # Reset trạng thái và đổi lượt
         self.promotion_pending = False
         self.promotion_pos = None
         
         if not self.game_over:
+            # Lưu last move cho promotion (quan trọng nếu muốn undo)
+            self._update_last_move(pos, pos, self.board[row][col]) 
             self.switch_turn()
             print(f"Hoàn tất phong cấp. Lượt: {self.current_turn}")
         

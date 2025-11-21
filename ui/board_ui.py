@@ -24,12 +24,6 @@ CHESS_HINT_COLOR = (247, 247, 105, 120)
 CHESS_SELECTED_COLOR = (186, 202, 68, 160)
 CHECK_GLOW_COLOR = (255, 0, 0, 200)
 
-# --- CLASS QUÂN CỜ GIẢ (Dùng để hiển thị, tránh lỗi Abstract Class) ---
-class VisualPiece:
-    def __init__(self, symbol, color):
-        self.symbol = symbol
-        self.color = color
-
 # --- HELPER ---
 def get_piece_info(piece_data):
     if piece_data is None: return None, None
@@ -40,20 +34,10 @@ def get_piece_info(piece_data):
 # --- CLASS HỘP THOẠI PHONG CẤP ---
 class PromotionWindow(UIWindow):
     def __init__(self, rect, manager, piece_assets, player_color):
-        # 1. Tự động TĂNG chiều rộng lên một chút cho thoáng (nếu muốn)
-        # Ví dụ: Set cứng chiều rộng là 500px hoặc 600px để nút to rõ
         target_width = max(rect.width, 500) 
-        
-        # 2. Tính toán kích thước nút VUÔNG dựa trên chiều rộng
         padding = 20
-        # (Chiều rộng - 5 khoảng padding) chia 4 nút
         btn_size = (target_width - padding * 5) // 4
-        
-        # 3. Tính chiều cao khung chuẩn để vừa khít nút
-        # 30px (tiêu đề) + 20px (đệm trên) + kích thước nút + 20px (đệm dưới)
         target_height = 57 + padding + btn_size + padding
-        
-        # Cập nhật lại rect chuẩn chỉ
         rect = pygame.Rect(rect.x, rect.y, target_width + 35, target_height)
 
         super().__init__(rect, manager, window_display_title="Chọn Quân Phong Cấp")
@@ -62,9 +46,8 @@ class PromotionWindow(UIWindow):
         self.rebuild()
 
         self.btn_map = {}
-        options = ['q', 'r', 'b', 'n']
+        options = ['q', 'r', 'b', 'n'] # Hậu, Xe, Tượng, Mã
 
-        # Panel chứa nội dung
         panel = UIPanel(
             relative_rect=pygame.Rect(0, 0, target_width, target_height - 30),
             starting_height=1,
@@ -74,14 +57,10 @@ class PromotionWindow(UIWindow):
 
         for i, char in enumerate(options):
             symbol = char.upper() if player_color == 'white' else char.lower()
-
             x = padding + i * (btn_size + padding)
-            y = 10 # Cách top panel 1 khoảng padding
+            y = 10 
             
-            # Nút hình vuông (width = height = btn_size)
             btn_rect = pygame.Rect(x, y, btn_size, btn_size)
-
-            # Tạo nút
             btn = UIButton(
                 relative_rect=btn_rect,
                 text="",
@@ -91,22 +70,16 @@ class PromotionWindow(UIWindow):
             )
             self.btn_map[btn] = char
 
-            # Xử lý icon
             if symbol in piece_assets:
                 img = piece_assets[symbol]
-                
-                # Icon nhỏ hơn nút 1 chút (trừ đi 20px padding trong)
                 icon_size = btn_size - 22
                 img_scaled = pygame.transform.smoothscale(img, (icon_size, icon_size))
-
-                # Căn giữa icon trong nút
                 img_rect = pygame.Rect(
                     x + (btn_size - icon_size) // 2,
                     y + (btn_size - icon_size) // 2,
                     icon_size,
                     icon_size
                 )
-
                 UIImage(
                     relative_rect=img_rect,
                     image_surface=img_scaled,
@@ -265,14 +238,21 @@ class BoardUI:
         return None
 
     def _process_move_logic(self, clicked_pos):
+        """
+        Xử lý logic khi người chơi click vào bàn cờ.
+        """
         if self.selected_piece_pos:
             from_pos = self.selected_piece_pos
             to_pos = clicked_pos
+            
+            # Validator đã kiểm tra luật Nhập Thành ở đây
+            # Nếu ô g1 (nhập thành) bị chặn hoặc nguy hiểm, nó sẽ KHÔNG có trong self.possible_moves
             if to_pos in self.possible_moves:
-                is_promotion = False
                 piece_data = self.game_logic.get_piece(from_pos)
                 symbol, color = get_piece_info(piece_data)
-                
+
+                # --- CHECK PHONG CẤP ---
+                is_promotion = False
                 if self.game_logic.game_type == 'chess' and symbol:
                     if symbol.lower() == 'p':
                         if (color == 'white' and to_pos[0] == 0) or \
@@ -283,10 +263,20 @@ class BoardUI:
                     self.pending_promotion_move = (from_pos, to_pos)
                     self._show_promotion_window(color)
                 else:
+                    # --- DI CHUYỂN ---
+                    # Board.py sẽ tự động xử lý:
+                    # 1. Dời Vua
+                    # 2. Dời Xe (nếu là nhập thành)
+                    # 3. Xóa Tốt (nếu là En Passant)
                     move_success = self.game_logic.move_piece(from_pos, to_pos)
-                    if move_success and self.network_manager:
-                        move_data = {"type": "move", "from": from_pos, "to": to_pos, "game_type": self.game_logic.game_type}
-                        self.network_manager.send_to_p2p(move_data)
+                    
+                    if move_success:
+                        if self.network_manager:
+                            move_data = {
+                                "type": "move", "from": from_pos, "to": to_pos, 
+                                "game_type": self.game_logic.game_type
+                            }
+                            self.network_manager.send_to_p2p(move_data)
                 
                 self.selected_piece_pos = None; self.possible_moves = []
             else:
@@ -295,8 +285,10 @@ class BoardUI:
                 if new_symbol:
                     if new_color != self.game_logic.current_turn: return 
                     self.selected_piece_pos = clicked_pos
+                    # Lấy nước đi an toàn từ Validator
                     self.possible_moves = self.game_logic.validator.get_valid_moves_for_piece(self.game_logic, clicked_pos, self.game_logic.current_turn)
-                else: self.selected_piece_pos = None; self.possible_moves = []
+                else: 
+                    self.selected_piece_pos = None; self.possible_moves = []
         else:
             piece_data = self.game_logic.get_piece(clicked_pos)
             symbol, color = get_piece_info(piece_data)
@@ -307,96 +299,65 @@ class BoardUI:
                 self.possible_moves = self.game_logic.validator.get_valid_moves_for_piece(self.game_logic, clicked_pos, self.game_logic.current_turn)
 
     def _show_promotion_window(self, player_color):
-        """Hiển thị popup phong cấp."""
         rect = pygame.Rect(0, 0, 440, 160) 
         rect.center = (WIDTH//2, HEIGHT//2)
         self.promotion_window = PromotionWindow(rect, self.ui_manager, self.piece_assets, player_color)
 
     def _execute_promotion_move(self, promotion_char):
-        """
-        Thực hiện phong cấp. Xử lý cả 2 trường hợp:
-        1. Tốt chưa đi (self.pending_promotion_move có giá trị).
-        2. Tốt ĐÃ đi rồi nhưng game pending (self.game_logic.promotion_pending = True).
-        """
-        
-        # Trường hợp 1: Logic UI bắt được (Tốt chưa vào ô đích)
         if self.pending_promotion_move:
             from_pos, to_pos = self.pending_promotion_move
             piece_data = self.game_logic.get_piece(from_pos)
             _, pawn_color = get_piece_info(piece_data)
+            
             new_symbol = promotion_char.upper() if pawn_color == 'white' else promotion_char.lower()
 
-            # Di chuyển Tốt (Game Logic sẽ set promotion_pending = True)
-            if self.game_logic.move_piece(from_pos, to_pos):
-                if hasattr(self.game_logic, 'apply_promotion'):
-                    self.game_logic.apply_promotion(new_symbol)
-                
-                if self.network_manager:
-                    move_data = {
-                        "type": "move", "from": from_pos, "to": to_pos, "promotion": new_symbol,
-                        "game_type": self.game_logic.game_type
-                    }
-                    self.network_manager.send_to_p2p(move_data)
+            success = self.game_logic.move_piece(from_pos, to_pos, promotion=new_symbol)
+
+            if success and self.network_manager:
+                move_data = {
+                    "type": "move", "from": from_pos, "to": to_pos, 
+                    "promotion": new_symbol,
+                    "game_type": self.game_logic.game_type
+                }
+                self.network_manager.send_to_p2p(move_data)
             
             self.pending_promotion_move = None
             return
 
-        # Trường hợp 2: "Cứu hộ" - Tốt đã vào ô đích rồi (Game Logic đang Pending)
         if self.game_logic.promotion_pending and self.game_logic.promotion_pos:
             to_pos = self.game_logic.promotion_pos
-            # Lấy màu từ lượt hiện tại (vì đang pending nên chưa đổi lượt)
             pawn_color = self.game_logic.current_turn
             new_symbol = promotion_char.upper() if pawn_color == 'white' else promotion_char.lower()
 
-            if hasattr(self.game_logic, 'apply_promotion'):
-                self.game_logic.apply_promotion(new_symbol)
-                
-                # Cần gửi mạng để bên kia cũng biến hình
-                # Lưu ý: Ở case này 'from_pos' không quan trọng vì Tốt đã ở đích rồi
-                # Nhưng ta cần gửi để client kia hiểu. Ta lấy luôn to_pos làm from_pos giả.
-                if self.network_manager:
-                     move_data = {
-                        "type": "move", "from": to_pos, "to": to_pos, "promotion": new_symbol,
-                        "game_type": self.game_logic.game_type
-                    }
-                     self.network_manager.send_to_p2p(move_data)
+            self.game_logic.apply_promotion(new_symbol)
+            
+            if self.network_manager:
+                 move_data = {
+                    "type": "move", "from": to_pos, "to": to_pos, "promotion": new_symbol,
+                    "game_type": self.game_logic.game_type
+                }
+                 self.network_manager.send_to_p2p(move_data)
 
     def update(self):
         self.ui_manager.update(0.016)
         
-        # --- CƠ CHẾ CỨU HỘ UI PHONG CẤP (QUAN TRỌNG) ---
-        # Nếu Game Logic đang chờ phong cấp mà UI chưa hiện cửa sổ -> Hiện ngay!
         if self.game_logic.game_type == 'chess' and \
            self.game_logic.promotion_pending and \
            not self.promotion_window and \
-           self.game_logic.is_my_turn(): # Chỉ hiện cho người chơi có lượt
-               
+           self.game_logic.is_my_turn():
                current_color = self.game_logic.current_turn
                self._show_promotion_window(current_color)
-        # ------------------------------------------------
 
         if self.network_manager:
             while not self.network_manager.p2p_queue.empty():
                 try:
                     msg = self.network_manager.p2p_queue.get_nowait()
                     msg_type = msg.get("type")
+                    
                     if msg_type == "move":
                         from_pos = tuple(msg["from"]); to_pos = tuple(msg["to"])
                         promo_symbol = msg.get("promotion")
-                        
-                        # Nếu gửi từ "Case 2" (from=to), ta chỉ apply promotion
-                        if from_pos == to_pos and promo_symbol:
-                             if hasattr(self.game_logic, 'apply_promotion'):
-                                 # Hack nhẹ: set pending=True để apply_promotion chạy
-                                 self.game_logic.promotion_pending = True
-                                 self.game_logic.promotion_pos = to_pos
-                                 self.game_logic.apply_promotion(promo_symbol)
-                        else:
-                            # Thực hiện move bình thường
-                            success = self.game_logic.move_piece(from_pos, to_pos)
-                            # Nếu có promotion key, thực hiện apply
-                            if success and promo_symbol and hasattr(self.game_logic, 'apply_promotion'):
-                                self.game_logic.apply_promotion(promo_symbol)
+                        self.game_logic.move_piece(from_pos, to_pos, promotion=promo_symbol)
 
                     elif msg_type == "chat":
                         if self.sidebar: self.sidebar.add_message("Đối thủ", msg["content"])
