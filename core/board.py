@@ -261,3 +261,107 @@ class Board:
             print(f"Hoàn tất phong cấp. Lượt: {self.current_turn}")
         
         return True
+    # --- THÊM VÀO CUỐI CLASS BOARD (core/board.py) ---
+
+    def uci_to_coords(self, uci_move: str):
+        """
+        Chuyển nước đi UCI (ví dụ 'e2e4') thành tọa độ ((6,4), (4,4))
+        """
+        if not uci_move: return None, None
+        
+        files = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+        
+        # Tọa độ bắt đầu
+        c1 = files[uci_move[0]]
+        r1 = 8 - int(uci_move[1])
+        
+        # Tọa độ kết thúc
+        c2 = files[uci_move[2]]
+        r2 = 8 - int(uci_move[3])
+        
+        # Kiểm tra phong cấp (ví dụ a7a8q)
+        promotion = uci_move[4].upper() if len(uci_move) > 4 else None
+        
+        return (r1, c1), (r2, c2), promotion
+
+    def to_fen(self):
+        """
+        Chuyển trạng thái bàn cờ hiện tại thành chuỗi FEN chuẩn để gửi cho Stockfish.
+        Ví dụ: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+        """
+        if self.game_type != 'chess':
+            return "" # Stockfish không chơi cờ tướng
+
+        fen = ""
+        # 1. Duyệt bàn cờ để xây dựng vị trí quân
+        for r in range(8):
+            empty_count = 0
+            for c in range(8):
+                p = self.board[r][c]
+                if p is None:
+                    empty_count += 1
+                else:
+                    if empty_count > 0:
+                        fen += str(empty_count)
+                        empty_count = 0
+                    # Quân trắng viết hoa, đen viết thường (Code Piece của bạn đã xử lý việc này chưa? 
+                    # Nếu piece.symbol trả về 'K' cho đen thì cần sửa. 
+                    # Giả sử: Trắng Hoa, Đen thường chuẩn FEN)
+                    symbol = p.symbol
+                    if p.color == 'white': symbol = symbol.upper()
+                    else: symbol = symbol.lower()
+                    fen += symbol
+            if empty_count > 0:
+                fen += str(empty_count)
+            if r < 7:
+                fen += "/"
+
+        # 2. Lượt đi ('w' hoặc 'b')
+        fen += " w " if self.current_turn == 'white' else " b "
+
+        # 3. Quyền nhập thành (Castling Rights)
+        # Logic đơn giản: Kiểm tra Vua và Xe có ở vị trí gốc và chưa di chuyển
+        castling = ""
+        # Check Trắng
+        k_w = self.get_piece((7, 4))
+        if k_w and k_w.symbol.upper() == 'K' and k_w.color == 'white' and not getattr(k_w, 'has_moved', True):
+            r_w_k = self.get_piece((7, 7)) # Xe cánh vua
+            if r_w_k and r_w_k.symbol.upper() == 'R' and not getattr(r_w_k, 'has_moved', True):
+                castling += "K"
+            r_w_q = self.get_piece((7, 0)) # Xe cánh hậu
+            if r_w_q and r_w_q.symbol.upper() == 'R' and not getattr(r_w_q, 'has_moved', True):
+                castling += "Q"
+        
+        # Check Đen
+        k_b = self.get_piece((0, 4))
+        if k_b and k_b.symbol.upper() == 'K' and k_b.color == 'black' and not getattr(k_b, 'has_moved', True):
+            r_b_k = self.get_piece((0, 7))
+            if r_b_k and r_b_k.symbol.upper() == 'R' and not getattr(r_b_k, 'has_moved', True):
+                castling += "k"
+            r_b_q = self.get_piece((0, 0))
+            if r_b_q and r_b_q.symbol.upper() == 'R' and not getattr(r_b_q, 'has_moved', True):
+                castling += "q"
+        
+        fen += castling if castling else "-"
+
+        # 4. En Passant Target
+        # Logic: Nếu nước vừa rồi là Tốt đi 2 ô, thì ô ở giữa là en passant target
+        en_passant = "-"
+        if self.last_move:
+            p = self.last_move['piece']
+            start = self.last_move['start']
+            end = self.last_move['end']
+            if p.symbol.upper() == 'P' and abs(start[0] - end[0]) == 2:
+                # Tính ô target (hàng giữa)
+                r_target = (start[0] + end[0]) // 2
+                c_target = start[1]
+                # Đổi sang tọa độ đại số (ví dụ e3)
+                files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+                en_passant = f"{files[c_target]}{8 - r_target}"
+        
+        fen += f" {en_passant}"
+
+        # 5. Halfmove và Fullmove (Để tạm mặc định vì không ảnh hưởng nhiều logic cơ bản)
+        fen += " 0 1"
+        
+        return fen
