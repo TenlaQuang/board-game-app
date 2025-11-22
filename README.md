@@ -22,6 +22,8 @@ python main.py
 ```
 
 ### Tham khảo code server giúp client trao đổi ip tại: [Repository này](https://github.com/TenlaQuang/board-game-app-sv)
+### Tham khảo bot chinese chess (xiangqi) tại: [Repository này](https://github.com/TenlaQuang/chinese-chess-model)
 
-### Còn đây là địa chỉ web render https://board-game-app-sv.onrender.com
+### Đây là địa chỉ web render https://board-game-app-sv.onrender.com
+
 server sẽ chạy dựa trên repository board-game-app-sv và luôn hoạt động để hỗ trợ app
