@@ -208,6 +208,19 @@ class App:
             except Exception as e:
                 print(f"❌ Lỗi tải AI: {e}")
         # --------------------------
+        # Chỉ cần là offline và là cờ tướng -> Load luôn CustomBot
+        if not online and game_type == 'chinese_chess':
+            try:
+                from ai.custom_bot import CustomXiangqiBot
+                # Load file model bạn đã train
+                ai_engine = CustomXiangqiBot(model_path="ai/weights/xiangqi_model.pth")
+                print(f"✅ Đã tải AI Cờ Tướng Tự Train!")
+            except Exception as e:
+                print(f"❌ Lỗi tải AI Cờ Tướng: {e}")
+                import traceback
+                traceback.print_exc() # In lỗi chi tiết để dễ sửa
+
+        # --------------------------
 
         if online:
             net_mgr = self.network_manager
