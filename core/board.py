@@ -1,4 +1,5 @@
 from typing import List, Tuple, Optional
+import copy
 from core.piece import (
     Piece, Pawn, Rook, Knight, Bishop, Queen, King,
     General, Advisor, Elephant, Horse, Chariot, Cannon, Soldier,
@@ -216,12 +217,16 @@ class Board:
                 self._update_last_move(from_pos, to_pos, piece)
                 self.switch_turn()
                 print(f"Đã đi: {from_pos}->{to_pos}. Lượt: {self.current_turn}")
+                # --- [QUAN TRỌNG] KIỂM TRA CHIẾU BÍ / HẾT NƯỚC ---
+                self.check_game_status()
+                # -------------------------------------------------
             else:
                 print("Game đã kết thúc.")
             return True
         else:
             print(f"Lỗi: Không có quân tại {from_pos}")
             return False
+    
 
     def _update_last_move(self, start, end, piece):
         """Lưu lại nước đi vừa thực hiện để check En Passant."""
@@ -365,3 +370,116 @@ class Board:
         fen += " 0 1"
         
         return fen
+    
+    # --- THÊM VÀO CLASS BOARD ---
+
+    def move_piece_dry_run(self, start, end):
+        """Đi thử: Di chuyển quân nhưng không vẽ, trả về quân bị ăn (nếu có)"""
+        r1, c1 = start
+        r2, c2 = end
+        
+        piece = self.board[r1][c1]
+        target = self.board[r2][c2] # Quân bị ăn (có thể là None)
+        
+        # Di chuyển
+        self.board[r2][c2] = piece
+        self.board[r1][c1] = None
+        
+        # Cập nhật tọa độ nội bộ của quân cờ (nếu có)
+        if hasattr(piece, 'update_position'):
+            piece.update_position((r2, c2))
+            
+        # Đổi lượt (để sinh FEN đúng lượt tiếp theo)
+        self.switch_turn()
+        
+        return target # Trả về để tí nữa còn hoàn tác
+
+    def undo_move_dry_run(self, start, end, captured_piece):
+        """Hoàn tác: Trả quân về vị trí cũ"""
+        r1, c1 = start
+        r2, c2 = end
+        
+        piece = self.board[r2][c2] # Quân vừa đi đến đích
+        
+        # Trả về chỗ cũ
+        self.board[r1][c1] = piece
+        self.board[r2][c2] = captured_piece # Trả lại quân bị ăn (hoặc None)
+        
+        # Cập nhật lại tọa độ
+        if hasattr(piece, 'update_position'):
+            piece.update_position((r1, c1))
+            
+        # Đổi lại lượt
+        self.switch_turn()
+    def copy(self):
+        """Tạo một bản sao độc lập của bàn cờ"""
+        # Tạo instance mới
+        new_board = Board(self.game_type)
+        
+        # Copy trạng thái bàn cờ (Deepcopy để không dính dáng gì bộ nhớ cũ)
+        # Lưu ý: Nếu Piece của bạn có chứa 'pygame.Surface' (ảnh), deepcopy sẽ lỗi.
+        # Code Piece chuẩn thường chỉ chứa data (color, symbol), ảnh load ở UI.
+        try:
+            new_board.board = copy.deepcopy(self.board)
+        except Exception:
+            # Fallback nếu deepcopy lỗi (do dính ảnh): Copy tay
+            new_board.board = [[copy.copy(p) if p else None for p in row] for row in self.board]
+            
+        new_board.current_turn = self.current_turn
+        new_board.game_over = self.game_over
+        new_board.winner = self.winner
+        
+        # Copy validator (quan trọng)
+        new_board.validator = self.validator 
+        
+        return new_board
+    # --- THÊM HÀM NÀY VÀO CUỐI CLASS BOARD ---
+    def check_game_status(self):
+        """
+        Kiểm tra xem phe hiện tại (current_turn) có bị Chiếu bí hoặc Hết nước đi không.
+        Hàm này được gọi ngay sau switch_turn.
+        """
+        if self.game_over: return
+
+        # 1. Kiểm tra xem phe hiện tại còn nước đi hợp lệ nào không?
+        has_valid_move = False
+        
+        # Duyệt toàn bộ bàn cờ để tìm quân của phe hiện tại
+        for r in range(self.rows):
+            for c in range(self.cols):
+                p = self.board[r][c]
+                if p and p.color == self.current_turn:
+                    # Nếu tìm thấy ít nhất 1 nước đi hợp lệ -> Chưa thua
+                    if self.validator:
+                        moves = self.validator.get_valid_moves_for_piece(self, (r, c), self.current_turn)
+                        if moves:
+                            has_valid_move = True
+                            break
+            if has_valid_move: break
+        
+        # 2. Xử lý kết quả nếu không còn nước đi
+        if not has_valid_move:
+            self.game_over = True
+            
+            # Kiểm tra xem có đang bị chiếu không?
+            is_in_check = False
+            if self.validator:
+                is_in_check = self.validator.is_in_check(self, self.current_turn)
+            
+            # Xác định người thắng (là người vừa đi xong -> ngược lại với current_turn)
+            winner_color = 'white' if self.current_turn == 'black' else 'black'
+            
+            if is_in_check:
+                # [CHIẾU BÍ - CHECKMATE]
+                self.winner = winner_color
+                print(f"🏁 CHIẾU BÍ! {winner_color.upper()} Thắng!")
+            else:
+                # [HẾT NƯỚC - STALEMATE]
+                if self.game_type == 'chinese_chess':
+                    # Luật Cờ Tướng: Hết nước đi là THUA
+                    self.winner = winner_color
+                    print(f"🏁 HẾT NƯỚC (Cờ Tướng)! {winner_color.upper()} Thắng!")
+                else:
+                    # Luật Cờ Vua: Hết nước đi (nhưng không bị chiếu) là HÒA
+                    self.winner = 'draw'
+                    print(f"🏁 HẾT NƯỚC (Cờ Vua)! HÒA (Stalemate)!")

@@ -529,20 +529,48 @@ class BoardUI:
     # --- [THÊM] HÀM CHẠY AI ---
     def run_ai_move(self):
         try:
-            # 1. Lấy FEN từ bàn cờ
-            fen = self.game_logic.to_fen()
-            # 2. Hỏi Stockfish
-            best_move = self.ai_engine.get_best_move(fen)
+            # Kiểm tra xem đây là Bot Tự Train hay là Engine (Stockfish/Pikafish)
+            # Bot tự train có hàm 'predict' hoặc thuộc tính 'device'
+            is_custom_bot = hasattr(self.ai_engine, 'predict') or hasattr(self.ai_engine, 'device')
             
-            if best_move:
-                print(f"🤖 Máy đi: {best_move}")
-                # 3. Đổi tọa độ uci (e7e5) sang tọa độ số ((1,4)->(3,4))
-                start, end, promo = self.game_logic.uci_to_coords(best_move)
+            if is_custom_bot:
+                # =================================================
+                # TRƯỜNG HỢP 1: BOT TỰ TRAIN (CỜ TƯỚNG)
+                # =================================================
+                # Bot này cần nhận toàn bộ logic bàn cờ để tự tính toán
+                best_move = self.ai_engine.get_best_move(self.game_logic)
                 
-                if start and end:
-                    # 4. Đi quân (Logic game)
-                    self.game_logic.move_piece(start, end, promotion=promo)
+                if best_move:
+                    start, end = best_move
+                    print(f"🤖 Bot đi: {start} -> {end}")
+                    
+                    # Đi trực tiếp (vì đã có tọa độ rồi)
+                    self.game_logic.move_piece(start, end)
+            
+            else:
+                # =================================================
+                # TRƯỜNG HỢP 2: ENGINE (STOCKFISH / PIKAFISH)
+                # =================================================
+                # 1. Lấy FEN từ bàn cờ
+                fen = self.game_logic.to_fen()
+                
+                # 2. Hỏi Stockfish/Pikafish
+                best_move_str = self.ai_engine.get_best_move(fen)
+                
+                if best_move_str:
+                    print(f"🤖 Engine đi: {best_move_str}")
+                    
+                    # 3. Đổi tọa độ uci (e7e5) sang tọa độ số ((1,4)->(3,4))
+                    start, end, promo = self.game_logic.uci_to_coords(best_move_str)
+                    
+                    if start and end:
+                        # 4. Đi quân
+                        self.game_logic.move_piece(start, end, promotion=promo)
+
         except Exception as e:
-            print(f"Lỗi AI: {e}")
+            print(f"❌ Lỗi AI: {e}")
+            import traceback
+            traceback.print_exc() # In chi tiết lỗi để dễ sửa
         
+        # Tắt cờ hiệu để cho phép người chơi click chuột lại
         self.is_ai_thinking = False
