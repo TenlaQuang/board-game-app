@@ -169,7 +169,7 @@ class App:
                 self.chess_menu.draw()
 
             elif self.state == 'XIANGQI_MENU':
-                self.xiangqi_bg.update(time_delta); self.xiangqi_bg.draw(self.screen)
+                self.xiangqi_menu.draw()
             
             elif self.state == 'ONLINE_MENU':
                 self.screen.fill((20, 25, 40))
