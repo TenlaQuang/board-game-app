@@ -231,6 +231,47 @@
             "border_width": "0",
             "shadow_width": "0"
         }
+    },
+    "#xiangqi_btn": {
+        "images": {
+            "normal_image": { 
+                "path": "ui/assets/images/button_bg.png" 
+            },
+            "hovered_image": { 
+                "path": "ui/assets/images/button_bg.png" 
+            },
+            "active_image": { 
+                "path": "ui/assets/images/button_bg.png" 
+            }
+        },
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "disabled_bg": "#00000000",
+            "normal_border": "#00000000",
+            "hovered_border": "#00000000",
+            "active_border": "#00000000",
+            
+            "normal_text": "#000000",
+            "hovered_text": "#6D3B1D",
+            "active_text": "#000000",
+            "selected_text": "#000000"
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "border_width": "0",
+            "shadow_width": "0",
+            "text_horiz_alignment": "center",
+            "text_vert_alignment": "center"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "19",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        }
     }
-
 }
+
+
