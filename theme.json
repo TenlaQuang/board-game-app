@@ -271,7 +271,132 @@
             "bold": "1",
             "regular_path": "ui/assets/fonts/font_vi.ttf"
         }
+    },
+    "#transparent_btn": {
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",    
+            "active_bg": "#00000000",     
+            "disabled_bg": "#00000000",
+            
+            "normal_border": "#00000000",
+            "hovered_border": "#00000000",
+            "active_border": "#00000000",
+            "disabled_border": "#00000000",
+
+            "normal_text": "#4E2A14", 
+            "hovered_text": "#8B4513",
+            "active_text": "#2A1507" 
+        },
+        "font": {
+            "name": "Arial",
+            "size": "22",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
     }
+    
+    ,
+    "#room_id_label": {
+        "colours": {
+            "normal_text": "#FFFFFF"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "36",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "text_horiz_alignment": "center",
+            "text_vert_alignment": "center"
+        }
+    },
+    "#transparent_input": {
+        "colours": {
+            "normal_bg": "#00000000",      
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "focused_bg": "#00000000",
+            "selected_bg": "#00000000",
+            "disabled_bg": "#00000000", 
+            
+            "normal_border": "#00000000",   
+            "focused_border": "#00000000",  
+            "selected_border": "#00000000",
+
+            "normal_text": "#FFFFFF",
+            "selected_text": "#FFFFFF"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "30",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "border_width": "0",
+            "text_horiz_alignment": "center"
+        }
+    },
+    "#keypad_btn": {
+        "images": {
+            "normal_image": { "path": "ui/assets/images/keypad_btn.png" },
+            "hovered_image": { "path": "ui/assets/images/keypad_btn.png" },
+            "active_image": { "path": "ui/assets/images/keypad_btn.png" }
+        },
+        "colours": {
+            "normal_bg": "#00000000", 
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            
+            "normal_text": "#5C3A21", 
+            "hovered_text": "#7A4E31",
+            "active_text": "#2A1507",
+            "normal_border": "#00000000"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "32", 
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
+    },
+    "#enter_table_btn": {
+        "images": {
+            "normal_image": { "path": "ui/assets/images/enter_table_btn.png" },
+            "hovered_image": { "path": "ui/assets/images/enter_table_btn.png" },
+            "active_image": { "path": "ui/assets/images/enter_table_btn.png" }
+        },
+        "colours": {
+            "normal_bg": "#00000000", 
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            
+            "normal_text": "#4E2A14", 
+            "hovered_text": "#6D3B1D",
+            "active_text": "#2A1507" 
+        },
+        "font": {
+            "name": "Arial",
+            "size": "36", 
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
+    }
+    
 }
 
 
