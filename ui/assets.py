@@ -109,26 +109,26 @@ def load_assets():
 
     print("Tải tài nguyên hoàn tất.")
     # --- 5. Tải Font ---  
-UI_FONTS = {}
+    UI_FONTS = {}
 
-def load_font(filename, size):
-    """Load font từ thư mục assets, nếu lỗi thì dùng font mặc định."""
-    font_path = os.path.join(ASSETS_DIR, filename)
-    if os.path.exists(font_path):
-        try:
-            return pygame.font.Font(font_path, size)
-        except Exception as e:
-            print(f"[Font Error] Không thể load font {filename}: {e}")
-    else:
-        print(f"[Font Missing] Không tìm thấy file font: {font_path}")
+    def load_font(filename, size):
+        """Load font từ thư mục assets, nếu lỗi thì dùng font mặc định."""
+        font_path = os.path.join(ASSETS_DIR, filename)
+        if os.path.exists(font_path):
+            try:
+                return pygame.font.Font(font_path, size)
+            except Exception as e:
+                print(f"[Font Error] Không thể load font {filename}: {e}")
+        else:
+            print(f"[Font Missing] Không tìm thấy file font: {font_path}")
 
-    return pygame.font.SysFont(None, size)  # fallback
+        return pygame.font.SysFont(None, size)  # fallback
 
-def init_fonts():
-    """Khởi tạo font kích cỡ phổ biến."""
-    global UI_FONTS
-    UI_FONTS = {
-        "winner": lambda size: load_font("myfont.ttf", size),
-        "info": lambda size: load_font("myfont.ttf", size),
-        "menu": lambda size: load_font("myfont.ttf", size),
+    def init_fonts():
+        """Khởi tạo font kích cỡ phổ biến."""
+        global UI_FONTS
+        UI_FONTS = {
+            "winner": lambda size: load_font("Roboto-Regular.ttf", size),
+            "info": lambda size: load_font("Roboto-Regular.ttf", size),
+            "menu": lambda size: load_font("Roboto-Regular.ttf", size),
     }
