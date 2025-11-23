@@ -1,4 +1,5 @@
 import json
+import time
 import threading
 import pygame
 import os
@@ -526,6 +527,39 @@ class BoardUI:
             s = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
             if self.game_logic.game_type == 'chess': s.fill(CHESS_SELECTED_COLOR); self.screen.blit(s, (rect_x, rect_y))
             else: pygame.draw.circle(s, (255, 215, 0, 200), (cell_size//2, cell_size//2), int(cell_size//2 * 0.9) + 2, 4); self.screen.blit(s, (rect_x, rect_y))
+       # --- [HIGHLIGHT LAST MOVE] ---
+        if hasattr(self.game_logic, 'last_move') and self.game_logic.last_move:
+            lm = self.game_logic.last_move
+            start_pos = lm['start']
+            end_pos = lm['end']
+            
+            # [SỬA 1] Màu vàng nhạt hơn: (255, 255, 0, 60)
+            # Số cuối cùng (60) là độ đậm nhạt. Càng nhỏ càng mờ.
+            highlight_color = (255, 255, 0, 60) 
+
+            for pos in [start_pos, end_pos]:
+                screen_r, screen_c = self.to_screen_pos(pos[0], pos[1])
+                
+                rect_x = start_x + screen_c * cell_size
+                rect_y = start_y + screen_r * cell_size
+                
+                s = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+                
+                if self.game_logic.game_type == 'chess':
+                    # Cờ vua: Tô full ô vuông
+                    s.fill(highlight_color)
+                else:
+                    # [SỬA 2] Cờ tướng: Vẽ hình tròn
+                    # center: tâm hình tròn (giữa ô)
+                    # radius: bán kính (nhỏ hơn ô một chút cho đẹp)
+                    center = (cell_size // 2, cell_size // 2)
+                    radius = int(cell_size // 2 * 0.8) 
+                    
+                    # Vẽ hình tròn đặc (màu nhạt)
+                    pygame.draw.circle(s, highlight_color, center, radius)
+
+                self.screen.blit(s, (rect_x, rect_y))
+        # -----------------------------
     # --- [THÊM] HÀM CHẠY AI ---
     def run_ai_move(self):
         try:
