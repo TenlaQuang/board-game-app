@@ -4,7 +4,7 @@ from ai.model import XiangqiNet
 from ai.preprocess import fen_to_tensor
 
 class CustomXiangqiBot:
-    def __init__(self, model_path="ai/weights/xiangqi_model.pth", depth=4):
+    def __init__(self, model_path="ai/weights/xiangqi_model.pth", depth=5):
         self.device = torch.device("cpu")
         self.model = XiangqiNet().to(self.device)
         self.base_depth = depth
@@ -85,7 +85,7 @@ class CustomXiangqiBot:
         BEAM_WIDTH = 12 
         # Nếu đang ở độ sâu lớn (gần gốc), tính kỹ hơn. Sâu quá thì cắt bớt.
         if depth > 2: 
-            moves = moves[:15] # Giữ 15 nước
+            moves = moves[:20] # Giữ 15 nước
         else:
             moves = moves[:10]  # Chỉ giữ 8 nước ngon nhất
 

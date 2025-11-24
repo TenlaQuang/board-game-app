@@ -9,22 +9,37 @@ WEB_SERVER = "https://board-game-app-sv.onrender.com"
 # LẤY IP RADMIN VPN (PowerShell)
 # ==========================
 def get_radmin_ip() -> Optional[str]:
-    """Tìm IP Radmin bằng PowerShell (Cách mạnh nhất)."""
+    print("[NET] Đang tìm IP Radmin...")
+    
+    # CÁCH 1: Dùng PowerShell (Mạnh nhất, không sợ ngôn ngữ Tiếng Việt/Anh)
     try:
-        # Dùng PowerShell để lọc IP bắt đầu bằng 26.
+        # Lệnh này tìm IP bắt đầu bằng 26. mà không quan tâm tên card mạng
         cmd = 'powershell -command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -like \'26.*\'} | Select-Object -ExpandProperty IPAddress"'
-        output = subprocess.check_output(cmd, shell=True, encoding="utf8", timeout=3).strip()
+        # flag creationflags=0x08000000 giúp ẩn cửa sổ console đen khi chạy file exe (nếu đóng gói)
+        output = subprocess.check_output(cmd, shell=True, encoding="utf8", timeout=3, creationflags=0x08000000).strip()
         
         if output:
-            return output.splitlines()[0].strip()
-    except:
-        try:
-            output = subprocess.check_output("ipconfig", shell=True, encoding="utf8")
-            match = re.search(r"IPv4 Address[^\:]*: (26\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})", output)
-            if match:
-                return match.group(1).strip()
-        except:
-            pass
+            # Nếu có nhiều dòng, lấy dòng đầu tiên
+            ip = output.splitlines()[0].strip()
+            print(f"[NET] Tìm thấy IP (PowerShell): {ip}")
+            return ip
+    except Exception as e:
+        print(f"[NET] Lỗi PowerShell: {e}")
+
+    # CÁCH 2: Dùng ipconfig (Dự phòng)
+    try:
+        output = subprocess.check_output("ipconfig", shell=True, encoding="utf8", creationflags=0x08000000)
+        # Regex sửa đổi: Bắt bất kỳ dòng nào có "26.x.x.x", bỏ qua phần chữ "IPv4 Address"
+        # Điều này giúp chạy được cả trên Windows Tiếng Việt ("Địa chỉ IPv4")
+        match = re.search(r": (26\.\d{1,3}\.\d{1,3}\.\d{1,3})", output)
+        if match:
+            ip = match.group(1).strip()
+            print(f"[NET] Tìm thấy IP (ipconfig): {ip}")
+            return ip
+    except Exception as e:
+        print(f"[NET] Lỗi ipconfig: {e}")
+
+    print("[NET] ❌ KHÔNG tìm thấy IP Radmin!")
     return None
 
 # ==========================
