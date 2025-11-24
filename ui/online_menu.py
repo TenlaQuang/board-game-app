@@ -223,6 +223,9 @@ class OnlineMenu:
             if event.ui_element == self.invite_list_window:
                 self.invite_list_window = None
 
+            elif event.ui_element == self.invite_dialog:
+                self.invite_dialog = None
+
         if event.type == pygame_gui.UI_CONFIRMATION_DIALOG_CONFIRMED:
             if event.ui_element == self.invite_dialog:
                 self.invite_dialog = None
@@ -298,22 +301,52 @@ class OnlineMenu:
     # ==========================================
     # LOGIC MẠNG
     # ==========================================
+
     def update_user_list_ui(self, users, invite=None):
-        if isinstance(users, list): self.users_data = {u['username']: u for u in users}
-        else: self.users_data = {}
+        if isinstance(users, list):
+            # [FIX QUAN TRỌNG] Chỉ lấy những người đang chơi CÙNG LOẠI GAME với mình
+            # Nếu mình đang ở 'chess' -> chỉ thấy người 'chess'
+            # Nếu mình đang ở 'chinese_chess' -> chỉ thấy người 'chinese_chess'
+            filtered_users = [
+                u for u in users 
+                if u.get('lobby_state') == self.current_game_type 
+            ]
+            self.users_data = {u['username']: u for u in filtered_users}
+        else:
+             self.users_data = {}
+
+        # Cập nhật danh sách lên giao diện Popup (nếu đang mở)
         if self.invite_list_window is not None and hasattr(self, 'user_list'):
-            new_names = [u['username'] for u in users if u['username'] != self.network_manager.username]
+            # Lọc bỏ tên chính mình ra
+            new_names = [u['username'] for u in self.users_data.values() if u['username'] != self.network_manager.username]
             self.user_list.set_item_list(new_names)
-        if invite: self._handle_incoming_invite(invite)
+
+        # Xử lý lời mời đến (Giữ nguyên)
+        if invite:
+            self._handle_incoming_invite(invite)
 
     def _handle_incoming_invite(self, invite):
+        # Chỉ hiện nếu chưa có hộp thoại nào
         if self.invite_dialog is None:
             challenger = invite.get("from")
             room_id = invite.get("room_id")
             g_type = invite.get("game_type", "chess")
+            
+            # Kiểm tra xem lời mời có đúng loại game mình đang chơi không
+            if g_type != self.current_game_type:
+                return # Bỏ qua nếu khác loại cờ
+
             self.pending_room_id = room_id
-            self.invite_dialog = UIConfirmationDialog(rect=pygame.Rect((0, 0), (400, 200)), manager=self.ui_manager, window_title="Thách Đấu!", action_long_desc=f"<b>{challenger}</b> mời bạn chơi {g_type}.<br>ID: {room_id}", action_short_name="Vào Ngay", blocking=True)
-            self.invite_dialog.rect.center = (WIDTH // 2, HEIGHT // 2); self.invite_dialog.rebuild()
+            self.invite_dialog = UIConfirmationDialog(
+                rect=pygame.Rect((0, 0), (400, 200)),
+                manager=self.ui_manager,
+                window_title="Thách Đấu!",
+                action_long_desc=f"<b>{challenger}</b> mời bạn chơi {g_type}.<br>ID: {room_id}",
+                action_short_name="Vào Ngay",
+                blocking=True
+            )
+            self.invite_dialog.rect.center = (WIDTH // 2, HEIGHT // 2)
+            self.invite_dialog.rebuild()
 
     # [MỚI] THREAD LOGIN
     def _thread_login(self, username):
