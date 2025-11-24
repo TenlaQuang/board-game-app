@@ -3,125 +3,96 @@ import subprocess
 import re
 import socket
 import threading
+from urllib.parse import quote # <--- [QUAN TRỌNG] Thêm thư viện này
 from typing import Optional, Dict
 
 WEB_SERVER = "https://board-game-app-sv.onrender.com"
 
-# --- TỐI ƯU 1: Dùng Session để tái sử dụng kết nối (Nhanh hơn 2-3 lần) ---
+# Session giúp kết nối nhanh hơn
 session = requests.Session()
 adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10)
 session.mount('https://', adapter)
 
-# --- TỐI ƯU 2: Biến Cache để lưu IP, không tìm lại nhiều lần ---
 _CACHED_RADMIN_IP = None
 
-# ==========================
-# LẤY IP RADMIN VPN (CÓ CACHE)
-# ==========================
 def get_radmin_ip() -> Optional[str]:
-    """
-    Tìm IP Radmin và lưu lại vào Cache.
-    Chỉ tốn thời gian lần đầu tiên, các lần sau trả về ngay lập tức.
-    """
     global _CACHED_RADMIN_IP
-    
-    # Nếu đã có IP trong bộ nhớ, trả về luôn (Mất 0s)
-    if _CACHED_RADMIN_IP:
-        return _CACHED_RADMIN_IP
+    if _CACHED_RADMIN_IP: return _CACHED_RADMIN_IP
 
     print("[NET] Đang quét IP Radmin lần đầu...")
-
-    # 1. Quét bằng Socket (Nhanh nhất - 0.001s)
+    # 1. Socket
     try:
         hostname = socket.gethostname()
         _, _, ip_list = socket.gethostbyname_ex(hostname)
         for ip in ip_list:
             if ip.startswith("26."):
                 _CACHED_RADMIN_IP = ip
-                print(f"[NET] ✅ Đã cache IP: {ip}")
                 return ip
     except: pass
-
-    # 2. Quét bằng PowerShell (Nếu Socket thất bại)
+    
+    # 2. PowerShell
     try:
         cmd = 'powershell -command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -like \'26.*\'} | Select-Object -ExpandProperty IPAddress"'
         output = subprocess.check_output(cmd, shell=True, encoding="utf8", timeout=2, creationflags=0x08000000).strip()
         if output:
             ip = output.splitlines()[0].strip()
             _CACHED_RADMIN_IP = ip
-            print(f"[NET] ✅ Đã cache IP (PowerShell): {ip}")
             return ip
     except: pass
 
-    # 3. Quét bằng ipconfig (Cuối cùng)
+    # 3. Ipconfig
     try:
         output = subprocess.check_output("ipconfig", shell=True, encoding="utf8", creationflags=0x08000000)
         match = re.search(r":\s*(26\.\d{1,3}\.\d{1,3}\.\d{1,3})", output)
         if match:
             ip = match.group(1).strip()
             _CACHED_RADMIN_IP = ip
-            print(f"[NET] ✅ Đã cache IP (ipconfig): {ip}")
             return ip
     except: pass
 
-    print("[NET] ⚠️ Không tìm thấy IP Radmin!")
     return None
 
-# ==========================
-# CÁC API SERVER (Dùng session thay vì requests)
-# ==========================
+# --- CÁC API SERVER ---
 
 def send_heartbeat(username: str, p2p_port: int, lobby_state: str = "menu"):
-    # Hàm này giờ chạy siêu nhanh vì lấy IP từ cache
-    radmin_ip = get_radmin_ip() 
-    
+    radmin_ip = get_radmin_ip()
     url = f"{WEB_SERVER}/heartbeat"
     try:
-        # timeout nhỏ (3s) để không làm lag game nếu mạng lag
         session.post(url, json={
             "username": username,
             "p2p_port": p2p_port,
             "ip": radmin_ip,       
             "lobby_state": lobby_state 
         }, timeout=3)
-    except:
-        pass
+    except: pass
 
 def get_online_users() -> list:
     url = f"{WEB_SERVER}/users"
     try:
         r = session.get(url, timeout=4)
-        if r.status_code == 200:
-            return r.json()
+        if r.status_code == 200: return r.json()
     except: pass
     return []
 
 def create_room_online(username: str, p2p_port: int, game_type: str) -> Optional[str]:
     radmin_ip = get_radmin_ip()
-    
     url = f"{WEB_SERVER}/create-room"
     try:
-        # Timeout dài hơn chút cho thao tác quan trọng
         r = session.post(url, json={
             "username": username,
             "p2p_port": p2p_port,
             "ip": radmin_ip,
             "game_type": game_type
         }, timeout=10)
-        if r.status_code == 200:
-            return r.json().get("room_id")
+        if r.status_code == 200: return r.json().get("room_id")
     except: pass
     return None
 
 def join_room_online(username: str, room_id: str) -> Optional[Dict]:
     url = f"{WEB_SERVER}/join-room"
     try:
-        r = session.post(url, json={
-            "username": username,
-            "room_id": room_id
-        }, timeout=10)
-        if r.status_code == 200:
-            return r.json()
+        r = session.post(url, json={"username": username, "room_id": room_id}, timeout=10)
+        if r.status_code == 200: return r.json()
     except: pass
     return None
 
@@ -137,7 +108,11 @@ def send_invite_online(challenger: str, target: str, room_id: str, game_type: st
     except: pass
 
 def check_invite_online(username: str):
-    url = f"{WEB_SERVER}/check-invite/{username}"
+    # [FIX LỖI QUAN TRỌNG] Mã hóa tên username (VD: "Player 1" -> "Player%201")
+    # Nếu không mã hóa, server sẽ không hiểu đường dẫn và trả về lỗi 404
+    safe_username = quote(username) 
+    
+    url = f"{WEB_SERVER}/check-invite/{safe_username}"
     try:
         r = session.get(url, timeout=2)
         if r.status_code == 200:
@@ -147,18 +122,14 @@ def check_invite_online(username: str):
     return None
 
 def accept_invite_online(username: str, room_id: str):
-    url = f"{WEB_SERVER}/accept-invite/{username}/{room_id}"
+    # Cũng cần mã hóa ở đây cho chắc chắn
+    safe_username = quote(username)
+    url = f"{WEB_SERVER}/accept-invite/{safe_username}/{room_id}"
     try: session.post(url, timeout=2)
     except: pass
 
-# ==========================
-# [MẸO] HÀM ĐÁNH THỨC SERVER SỚM
-# ==========================
 def wake_up_server():
-    """Gọi hàm này ngay khi mở Game để Server Render tỉnh ngủ sớm"""
     def _wake():
-        try:
-            print("[NET] Đang đánh thức server...")
-            requests.get(WEB_SERVER, timeout=3)
+        try: requests.get(WEB_SERVER, timeout=3)
         except: pass
     threading.Thread(target=_wake, daemon=True).start()
