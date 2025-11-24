@@ -27,3 +27,4 @@ python main.py
 ### Đây là địa chỉ web render https://board-game-app-sv.onrender.com
 
 server sẽ chạy dựa trên repository board-game-app-sv và luôn hoạt động để hỗ trợ app.
+oh yeah
