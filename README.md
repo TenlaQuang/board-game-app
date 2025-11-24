@@ -12,7 +12,7 @@ Dự án game cờ vua và cờ tướng peer-to-peer viết bằng Python + Pyg
 - `utils/`: Các hàm tiện ích và hằng số
 - `tests/`: Unit test
 
-## Cách chạy
+## Cách chạy app chơi cờ sử dụng P2P lai 
 
 ```bash
 python -m venv venv
@@ -27,4 +27,3 @@ python main.py
 ### Đây là địa chỉ web render https://board-game-app-sv.onrender.com
 
 server sẽ chạy dựa trên repository board-game-app-sv và luôn hoạt động để hỗ trợ app.
-oh yeah
