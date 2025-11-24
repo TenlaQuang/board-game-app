@@ -99,9 +99,8 @@ class App:
                     if action == 'BACK_TO_MAIN':
                         self.chess_menu.hide(); self.main_menu.show(); self.state = 'MAIN_MENU'
                     elif isinstance(action, tuple) and action[0] == 'PLAY_OFFLINE':
-                        _, difficulty = action # Tách lấy độ khó
+                        _, difficulty = action 
                         self.chess_menu.hide()
-                        # Truyền độ khó vào hàm start game
                         self._start_game_session('chess', online=False, difficulty=difficulty) 
                     # ----------------------
                     # elif action == 'PLAY_OFFLINE':
@@ -109,7 +108,13 @@ class App:
                     elif action == 'PLAY_ONLINE':
                         self.chess_menu.hide(); 
                         if self.online_menu: 
+                            # 1. Cập nhật cho UI (để hiện đúng tiêu đề, đúng luật)
                             self.online_menu.current_game_type = 'chess'
+                            self.online_menu.reset_ui_state()
+                            
+                            # [THÊM DÒNG NÀY] 2. Cập nhật cho NetworkManager (để báo Server biết mình ở đâu)
+                            self.network_manager.current_lobby_state = 'chess' 
+                            self.network_manager.force_update()
                             self.online_menu.show(); 
                             self.state = 'ONLINE_MENU'
 
@@ -119,10 +124,17 @@ class App:
                         self.xiangqi_menu.hide(); self.main_menu.show(); self.state = 'MAIN_MENU'
                     elif action == 'PLAY_OFFLINE': 
                         self.xiangqi_menu.hide(); self._start_game_session('chinese_chess', online=False)
+                    
                     elif action == 'PLAY_ONLINE': 
                         self.xiangqi_menu.hide(); 
                         if self.online_menu: 
+                            # 1. Cập nhật cho UI
                             self.online_menu.current_game_type = 'chinese_chess'
+                            self.online_menu.reset_ui_state()
+                            
+                            # [THÊM DÒNG NÀY] 2. Cập nhật cho NetworkManager (QUAN TRỌNG)
+                            self.network_manager.current_lobby_state = 'chinese_chess'
+                            self.network_manager.force_update()
                             self.online_menu.show(); 
                             self.state = 'ONLINE_MENU'
 
@@ -147,6 +159,8 @@ class App:
                     if self.game_screen:
                         action = self.game_screen.handle_events(event)
                         if action == 'QUIT_GAME':
+                            if self.network_manager:
+                                self.network_manager.reset_connection()
                             self.game_screen = None
                             self.main_menu.show()
                             self.state = 'MAIN_MENU'

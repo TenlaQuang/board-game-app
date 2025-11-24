@@ -359,16 +359,41 @@ class OnlineMenu:
         # Vào màn hình chính
         self.current_view = "SWITCH_TO_MAIN"
 
+    # [FIX] Cập nhật hàm này trong ui/online_menu.py
     def _thread_create(self):
-        # Không cần start_hosting_phase ở đây nữa vì đã làm lúc login
-        # Nhưng cứ để cho chắc chắn nếu có lỗi
-        self.network_manager.start_hosting_phase() 
-        rid = web_matchmaking.create_room_online(self.network_manager.username, self.network_manager._listening_port, self.current_game_type)
+        # Đảm bảo reset sạch sẽ kết nối cũ trước khi tạo mới
+        self.network_manager.reset_connection()
+        
+        # Bắt đầu mở cổng lắng nghe mới
+        port = self.network_manager.start_hosting_phase()
+        if port == 0:
+            print("Lỗi: Không thể mở port trên máy tính!")
+            return
+
+        print(f"[NET] Đang gửi yêu cầu tạo phòng (Port {port})...")
+        
+        # [MỚI] Cơ chế thử lại 3 lần (Retry Logic)
+        rid = None
+        for i in range(3):
+            rid = web_matchmaking.create_room_online(
+                self.network_manager.username, 
+                port, 
+                self.current_game_type
+            )
+            if rid:
+                print(f"[NET] Tạo phòng thành công: {rid}")
+                break
+            else:
+                print(f"[NET] Tạo phòng thất bại (Lần {i+1}). Đang thử lại...")
+                import time
+                time.sleep(1) # Nghỉ 1 giây rồi thử lại
+        
         if rid:
             self.host_room_id = rid
             self.current_view = "SWITCH_TO_LOBBY"
         else:
-            print("Lỗi tạo phòng")
+            print("[NET] Lỗi: Server không phản hồi sau 3 lần thử.")
+            # Có thể thêm thông báo lỗi lên UI nếu muốn
 
     def _thread_join(self, rid):
         host_info = web_matchmaking.join_room_online(self.network_manager.username, rid)
@@ -383,3 +408,18 @@ class OnlineMenu:
 
     def _thread_send_invite(self, target_name):
         web_matchmaking.send_invite_online(self.network_manager.username, target_name, self.host_room_id, self.current_game_type)
+ 
+    def reset_ui_state(self):
+        """Xóa trạng thái phòng cũ, đưa về màn hình Dashboard"""
+        self.host_room_id = None
+        self.pending_room_id = None
+        if hasattr(self, 'lbl_lobby_status'): 
+            self.lbl_lobby_status.set_text("")
+        
+        # [THÊM DÒNG NÀY] Xóa danh sách người chơi cũ để đợi load mới
+        self.users_data = {} 
+        if hasattr(self, 'online_list_ui'):
+            self.online_list_ui.set_item_list([])
+
+        if self.current_view in ["LOBBY", "JOIN"]:
+             self.setup_main_view()
