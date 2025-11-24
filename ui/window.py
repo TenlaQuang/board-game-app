@@ -16,7 +16,7 @@ from .board_ui import BoardUI
 from .chess_menu import ChessMenu      
 from .xiangqi_menu import XiangqiMenu 
 from .animated_background import AnimatedBackground
-
+from network import web_matchmaking
 try:
     from .online_menu import OnlineMenu
 except ImportError:
@@ -29,7 +29,7 @@ class App:
         self.network_manager = network_manager
         self.server_ip = server_ip
         self.server_port = server_port
-
+        web_matchmaking.wake_up_server()
         pygame.init()
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Board Game P2P")
