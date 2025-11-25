@@ -1,6 +1,6 @@
 # Board Game P2P lai♟️
 
-Dự án game cờ vua và cờ tướng peer-to-peer viết bằng Python + Pygame theo hướng OOP.
+Dự án game cờ vua và cờ tướng peer-to-peer lai viết bằng Python + Pygame theo hướng OOP.
 
 ## Cấu trúc thư mục
 
