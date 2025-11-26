@@ -188,8 +188,21 @@ class BoardUI:
 
     def handle_events(self, event: pygame.event.Event):
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE: return 'QUIT_GAME'
-
+            if event.key == pygame.K_ESCAPE: 
+                print(">>> ĐÃ BẤM ESC! <<<")
+                # [THÊM ĐOẠN NÀY]
+                # Nếu đang chơi Online, gửi lời trăn trối trước khi đi
+                if self.network_manager:
+                    try:
+                        self.network_manager.send_data({"type": "quit"})
+                        
+                        # [THÊM QUAN TRỌNG] Đợi 0.1 giây để tin nhắn kịp bay đi
+                        import time
+                        time.sleep(0.1) 
+                    except: pass
+                
+                # Sau đó mới thực hiện lệnh thoát game của mình
+                return 'QUIT_GAME'
         self.ui_manager.process_events(event)
 
         if self.promotion_window:
@@ -206,12 +219,20 @@ class BoardUI:
                 self.game_logic.winner = "draw"
                 if self.network_manager: self.network_manager.send_command("DRAW_ACCEPT")
                 self.confirmation_dialog = None
+            # 2. [THÊM ĐOẠN NÀY] Xử lý hộp thoại "Đối phương bỏ chạy"
+            # Khi bấm nút "Về Menu" thì thoát game ra ngoài
+            elif hasattr(self, 'quit_dialog') and event.ui_element == self.quit_dialog:
+                return 'QUIT_GAME'
         
+        # [THÊM] Xử lý đóng cửa sổ (nút X) cho quit_dialog
         if event.type == pygame_gui.UI_WINDOW_CLOSE:
              if event.ui_element == self.confirmation_dialog: self.confirmation_dialog = None
              if event.ui_element == self.promotion_window: 
                  self.promotion_window = None
                  self.pending_promotion_move = None 
+             # Thêm dòng này:
+             if hasattr(self, 'quit_dialog') and event.ui_element == self.quit_dialog:
+                 return 'QUIT_GAME' # Bấm X cũng thoát luôn
 
         if self.sidebar:
             action = self.sidebar.handle_event(event, self.network_manager)
@@ -372,7 +393,11 @@ class BoardUI:
                         from_pos = tuple(msg["from"]); to_pos = tuple(msg["to"])
                         promo_symbol = msg.get("promotion")
                         self.game_logic.move_piece(from_pos, to_pos, promotion=promo_symbol)
-
+                    # [THÊM ĐOẠN NÀY] Xử lý khi đối thủ thoát
+                    elif msg.get('type') == 'quit':
+                        self.show_opponent_quit_dialog()
+                        # Ngắt kết nối mạng phía mình luôn để dừng game
+                        self.network_manager.reset_connection()
                     elif msg_type == "chat":
                         if self.sidebar: self.sidebar.add_message("Đối thủ", msg["content"])
                     elif msg_type == "command":
@@ -390,6 +415,16 @@ class BoardUI:
                             self.sidebar.add_message("Hệ thống", "Hai bên đã hòa!"); self.game_logic.winner = "draw"; self.game_logic.game_over = True
                             if self.confirmation_dialog: self.confirmation_dialog.kill(); self.confirmation_dialog = None
                 except Exception as e: print(f"Lỗi update mạng: {e}")
+            # 2. [THÊM MỚI - QUAN TRỌNG NHẤT] 
+            # Kiểm tra nếu socket bị chết đột ngột (Đối thủ rớt mạng hoặc tắt game nóng)
+            # Điều kiện: Game chưa kết thúc VÀ Socket đã bị None (ngắt kết nối)
+            if not self.game_logic.game_over and self.network_manager.p2p_socket is None:
+                # Kiểm tra xem đã hiện bảng chưa để tránh hiện 100 cái bảng
+                if not hasattr(self, 'quit_dialog') or self.quit_dialog is None:
+                    print("Phát hiện mất kết nối đột ngột -> Coi như đối thủ bỏ chạy.")
+                    self.show_opponent_quit_dialog()
+                    # Đánh dấu game over để không check nữa
+                    self.game_logic.game_over = True
 
     def draw(self):
         bg_color = XIANGQI_BG_COLOR if self.game_logic.game_type != 'chess' else (48, 46, 43) 
@@ -416,7 +451,13 @@ class BoardUI:
         self.draw_highlight_king_in_check(cell_size, start_x, start_y)
         self.draw_pieces(cell_size, start_x, start_y)
         self.draw_highlights(cell_size, start_x, start_y)
-        if self.game_logic.game_over: self.draw_game_over_message()
+        # [SỬA LẠI ĐOẠN CUỐI NÀY] =================================================
+        if self.game_logic.game_over:
+            # Chỉ vẽ thông báo thắng/thua to đùng nếu KHÔNG CÓ bảng "Đối phương thoát"
+            # Điều này giúp giao diện sạch sẽ, không bị chữ đè lên nhau
+            if not hasattr(self, 'quit_dialog') or self.quit_dialog is None:
+                self.draw_game_over_message()
+        # ==========================================================================
         self.ui_manager.draw_ui(self.screen)
 
     def draw_game_over_message(self):
@@ -607,3 +648,25 @@ class BoardUI:
         
         # Tắt cờ hiệu để cho phép người chơi click chuột lại
         self.is_ai_thinking = False
+    # Thêm vào class BoardUI
+    def show_opponent_quit_dialog(self):
+        from pygame_gui.windows import UIConfirmationDialog
+        from pygame_gui.core import ObjectID
+        if self.game_logic.my_color:
+            self.game_logic.winner = self.game_logic.my_color
+        
+        # Đánh dấu game kết thúc luôn để chặn click chuột
+        self.game_logic.game_over = True
+        # Tạo hộp thoại thông báo
+        self.quit_dialog = UIConfirmationDialog(
+            rect=pygame.Rect(0, 0, 400, 200),
+            manager=self.ui_manager,
+            window_title="Thông Báo",
+            action_long_desc="Đối phương đã bỏ chạy!",
+            action_short_name="Về Menu",
+            blocking=True,
+            object_id=ObjectID(object_id="#confirmation_dialog") # Để nó nhận font tiếng Việt
+        )
+        # Căn giữa màn hình
+        self.quit_dialog.rect.center = (WIDTH // 2, HEIGHT // 2)
+        self.quit_dialog.rebuild()
