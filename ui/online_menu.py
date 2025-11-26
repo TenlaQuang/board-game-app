@@ -6,12 +6,16 @@ from pygame_gui.elements import UIWindow, UIButton, UITextEntryLine, UILabel, UI
 from pygame_gui.windows import UIConfirmationDialog 
 from utils.constants import WIDTH, HEIGHT
 from network import web_matchmaking 
-
+from pygame_gui.core import ObjectID
+from pygame_gui.elements import UIPanel
+from pygame_gui.elements import UIScrollingContainer
 class OnlineMenu:
     def __init__(self, screen, ui_manager, network_manager):
         self.screen = screen
         self.ui_manager = ui_manager
         self.network_manager = network_manager
+        self.invite_panel = None
+        self.btn_close_invite = None
         
         try:
             pygame.scrap.init()
@@ -24,10 +28,12 @@ class OnlineMenu:
         self.host_room_id = None 
         self.invite_dialog = None
         self.invite_list_window = None 
-        self.is_logged_in = False # Cờ kiểm tra đăng nhập
+        self.is_logged_in = False 
 
         # Container chính
-        self.rect = pygame.Rect(0, 0, 800, 600)
+        # Kích thước cửa sổ là 800x600
+        win_width, win_height = 800, 600
+        self.rect = pygame.Rect(0, 0, win_width, win_height)
         self.rect.center = (WIDTH // 2, HEIGHT // 2)
         
         self.window = UIWindow(
@@ -36,10 +42,24 @@ class OnlineMenu:
             window_display_title="Sảnh Online (P2P)",
             object_id="#online_window"
         )
+
+        # ============================================================
+        # [THÊM HÌNH NỀN] 1. TẢI VÀ CHUẨN BỊ HÌNH NỀN CHUNG
+        # ============================================================
+        try:
+            # Tải hình ảnh
+            self.common_bg_surface = pygame.image.load('ui/assets/images/bg_online_menu.png').convert()
+            # Scale hình ảnh cho vừa khít với kích thước cửa sổ (800x600)
+            self.common_bg_surface = pygame.transform.scale(self.common_bg_surface, (win_width, win_height))
+        except FileNotFoundError:
+            print("LỖI: Không tìm thấy file 'bg_online_menu.png'. Sử dụng nền tối mặc định.")
+            # Tạo nền màu xám tối nếu không tìm thấy ảnh
+            self.common_bg_surface = pygame.Surface((win_width, win_height))
+            self.common_bg_surface.fill((40, 40, 40))
+        # ============================================================
         
         self.ui_elements = []
         
-        # [THAY ĐỔI] Khởi động vào màn hình Login trước
         self.current_view = "LOGIN" 
         self.setup_login_view()
         
@@ -47,7 +67,6 @@ class OnlineMenu:
 
     def show(self):
         self.window.show()
-        # Chỉ poll nếu đã đăng nhập
         if self.is_logged_in:
             self.network_manager.start_polling_users(self.update_user_list_ui)
 
@@ -66,43 +85,127 @@ class OnlineMenu:
             self.invite_list_window.kill()
             self.invite_list_window = None
 
+    # ============================================================
+    # [THÊM HÌNH NỀN] 2. HÀM TRỢ GIÚP THÊM NỀN VÀO CỬA SỔ
+    # ============================================================
+    def _add_common_background(self):
+        """Thêm hình nền chung vào đáy của cửa sổ hiện tại."""
+        # Tạo UIImage phủ kín cửa sổ, đặt nó là phần tử đầu tiên để nó nằm dưới cùng.
+        x_pos = -15   # Số DƯƠNG (+) dịch sang PHẢI, số ÂM (-) dịch sang TRÁI
+        y_pos = -10   # Số DƯƠNG (+) dịch xuống DƯỚI, số ÂM (-) dịch lên TRÊN
+    
+    # Ví dụ: x_pos = -50 (dịch trái 50px), y_pos = -20 (dịch lên 20px)
+
+        bg_image = UIImage(
+        # Lưu ý: Thay self.rect.size bằng self.common_bg_surface.get_size() 
+        # để khung hình nhận đúng kích thước ảnh bạn đã chỉnh ở bước 1
+        relative_rect=pygame.Rect((x_pos, y_pos), self.common_bg_surface.get_size()),
+        image_surface=self.common_bg_surface,
+        manager=self.ui_manager,
+        container=self.window
+        )
+        self.ui_elements.append(bg_image)
+    # ============================================================
+
+
     # ==========================================
-    # [MỚI] 0. MÀN HÌNH ĐĂNG NHẬP
+    # 0. MÀN HÌNH ĐĂNG NHẬP
     # ==========================================
     def setup_login_view(self):
         self.clear_ui()
+        self._add_common_background() # Lớp 1: Nền chung
+        
         self.current_view = "LOGIN"
         self.window.set_display_title("Đăng Nhập")
 
-        lbl_title = UILabel(pygame.Rect((200, 150), (400, 50)), "Nhập tên hiển thị của bạn:", self.ui_manager, container=self.window)
+        # --- Lớp 2: Tấm bảng gỗ (Hình nền cho ô nhập liệu) ---
+        try:
+            # Load ảnh nền khung nhập
+            image_surface = pygame.image.load('ui/assets/images/id_input_bg.png').convert_alpha()
+        except FileNotFoundError:
+            image_surface = pygame.Surface((400, 100))
+            image_surface.fill((139, 69, 19))
+
+        img_w, img_h = image_surface.get_size()
         
-        self.entry_login_name = UITextEntryLine(pygame.Rect((250, 210), (300, 50)), self.ui_manager, container=self.window)
+        # Vị trí của tấm bảng (Căn giữa)
+        board_rect = pygame.Rect((0, 0), (img_w, img_h))
+        board_rect.center = (400, 200) 
+
+        self.img_lobby_board = UIImage(
+            relative_rect=board_rect,
+            image_surface=image_surface,
+            manager=self.ui_manager,
+            container=self.window
+        )
+
+        # --- Lớp 3: Dòng chữ và Ô nhập liệu ---
+        
+        # 1. Label tiêu đề
+        lbl_title = UILabel(
+            relative_rect=pygame.Rect((board_rect.x, board_rect.y - 16), (img_w, 30)), 
+            text="Nhập tên hiển thị của bạn:", 
+            manager=self.ui_manager, 
+            container=self.window
+        )
+
+        # 2. Ô nhập liệu (Trong suốt đè lên bảng gỗ)
+        input_width = img_w - 40 
+        input_height = 40
+        input_x = board_rect.x + 20
+        input_y = board_rect.y + 40 
+
+        self.entry_login_name = UITextEntryLine(
+            relative_rect=pygame.Rect((input_x, input_y), (input_width, input_height)), 
+            manager=self.ui_manager, 
+            container=self.window,
+            # SỬA: Phải dùng ObjectID() bao lại mới nhận diện được theme
+            object_id=ObjectID(object_id="#transparent_input") 
+        )
+        self.entry_login_name.set_text_length_limit(20)
         self.entry_login_name.set_text(self.network_manager.username)
         
-        self.btn_login_connect = UIButton(pygame.Rect((250, 280), (300, 60)), "KẾT NỐI SERVER", self.ui_manager, container=self.window)
-        
-        self.btn_back_login = UIButton(pygame.Rect((20, 500), (100, 40)), "Quay lại", self.ui_manager, container=self.window)
+        # 3. Nút Kết Nối (Thay thế bằng hình ảnh)
+        # SỬA: Chỉ giữ lại đoạn này, XÓA đoạn tạo nút bằng text phía dưới đi
+        self.btn_login_connect = UIButton(
+            relative_rect=pygame.Rect((250, board_rect.bottom + 20), (300, 80)),
+            text="Nhấp vào chơi nào", # Để trống chữ để hiện ảnh
+            manager=self.ui_manager,
+            container=self.window,
+            # SỬA: Dùng ObjectID để nhận ảnh enter_table_btn
+            object_id=ObjectID(object_id='#enter_table_btn') 
+        )
 
+        # Các nút/nhãn khác
+        self.btn_back_login = UIButton(pygame.Rect((20, 500), (100, 40)), "Quay lại", self.ui_manager, container=self.window)
         self.lbl_login_status = UILabel(pygame.Rect((200, 360), (400, 30)), "", self.ui_manager, container=self.window)
 
-        self.ui_elements.extend([lbl_title, self.entry_login_name, self.btn_login_connect, self.btn_back_login, self.lbl_login_status])
+        # --- Gom tất cả vào list quản lý (Chỉ gọi 1 lần) ---
+        self.ui_elements.extend([
+            self.img_lobby_board, 
+            lbl_title, 
+            self.entry_login_name, 
+            self.btn_login_connect, 
+            self.btn_back_login, 
+            self.lbl_login_status
+        ])
 
     # ==========================================
-    # 1. MENU CHÍNH (DASHBOARD) - ĐÃ SỬA NHẸ
+    # 1. MENU CHÍNH (DASHBOARD)
     # ==========================================
     def setup_main_view(self):
         self.clear_ui()
+        # [THÊM HÌNH NỀN] Gọi hàm thêm nền ngay sau khi clear
+        self._add_common_background()
+
         self.current_view = "MAIN"
         self.window.set_display_title(f"Sảnh Chính - {self.network_manager.username}")
 
-        # Giữ nguyên vị trí nút Tạo/Nhập phòng của bạn
         btn_create = UIButton(pygame.Rect((100, 150), (250, 200)), "TẠO PHÒNG", self.ui_manager, container=self.window)
         btn_join = UIButton(pygame.Rect((450, 150), (250, 200)), "NHẬP ID PHÒNG", self.ui_manager, container=self.window)
         
-        # [SỬA] Thay ô nhập tên thành Label chào mừng (vì đã nhập ở Login rồi)
         lbl_welcome = UILabel(pygame.Rect((200, 430), (400, 40)), f"Xin chào, {self.network_manager.username}!", self.ui_manager, container=self.window)
         
-        # Thêm nút Đăng xuất (Logout)
         self.btn_logout = UIButton(pygame.Rect((20, 500), (100, 40)), "Đăng xuất", self.ui_manager, container=self.window)
 
         self.ui_elements.extend([btn_create, btn_join, lbl_welcome, self.btn_logout])
@@ -110,17 +213,19 @@ class OnlineMenu:
         self.btn_join_main = btn_join
 
     # ==========================================
-    # 2. NHẬP ID (GIỮ NGUYÊN 100% CỦA BẠN)
+    # 2. NHẬP ID
     # ==========================================
     def setup_join_view(self):
         self.clear_ui()
+        # [THÊM HÌNH NỀN] Gọi hàm thêm nền ngay sau khi clear
+        self._add_common_background()
+
         self.current_view = "JOIN"
         self.window.set_display_title("Nhập Mã Phòng")
         
-        # Đảm bảo biến text tồn tại
         if not hasattr(self, 'join_input_text'): self.join_input_text = ""
 
-        # --- 1. HÌNH NỀN KHUNG ĐEN ---
+        # --- 1. HÌNH NỀN KHUNG ĐEN (Cái này là nền của ô nhập liệu, nằm trên nền chung) ---
         input_rect = pygame.Rect((229, 17), (350, 90)) 
         try:
             bg_surf = pygame.image.load('ui/assets/images/id_input_bg.png').convert_alpha()
@@ -136,7 +241,7 @@ class OnlineMenu:
         self.entry_join_id = UILabel(relative_rect=input_rect, text=self.join_input_text, manager=self.ui_manager, container=self.window, object_id="#room_id_label")
         self.ui_elements.append(self.entry_join_id)
         
-        # --- 3. BÀN PHÍM SỐ (GIỮ NGUYÊN) ---
+        # --- 3. BÀN PHÍM SỐ ---
         btn_w, btn_h = 125, 76
         gap = 10  
         start_x = 202
@@ -162,10 +267,14 @@ class OnlineMenu:
         self.ui_elements.append(self.lbl_status)
 
     # ==========================================
-    # 3. SẢNH CHỜ (GIỮ NGUYÊN 100% CỦA BẠN)
+    # 3. SẢNH CHỜ
     # ==========================================
     def setup_lobby_view(self, room_id):
         self.clear_ui()
+        # [THÊM HÌNH NỀN] Gọi hàm thêm nền ngay sau khi clear.
+        # Lưu ý: Hình nền chung sẽ nằm DƯỚI hình 'lobby_board.png'
+        self._add_common_background()
+
         self.current_view = "LOBBY"
         self.host_room_id = room_id
         self.window.set_display_title("Phòng chờ")
@@ -181,6 +290,7 @@ class OnlineMenu:
         img_rect = pygame.Rect(0, 0, board_w, board_h)
         img_rect.center = ((win_w // 2) - 42, (win_h // 2) - 50) 
         
+        # Cái này là cái bảng gỗ nhỏ, nó sẽ nằm ĐÈ LÊN nền chung
         self.lobby_bg = UIImage(relative_rect=img_rect, image_surface=board_surf, manager=self.ui_manager, container=self.window)
         self.ui_elements.append(self.lobby_bg)
 
@@ -191,16 +301,93 @@ class OnlineMenu:
         self.btn_cancel_host = UIButton(pygame.Rect((bx + 269, by + 255), (150, 60)), "Exit", self.ui_manager, container=self.window, object_id="#transparent_btn")
         self.lbl_lobby_status = UILabel(pygame.Rect((bx + 40, by + 385), (454, 30)), "", self.ui_manager, container=self.window)
         self.ui_elements.extend([self.entry_room_display, self.btn_copy, self.btn_open_invite_list, self.btn_cancel_host, self.lbl_lobby_status])
-
     # ==========================================
     # 4. POPUP DANH SÁCH MỜI
     # ==========================================
     def open_invite_popup(self):
-        if self.invite_list_window is not None: self.invite_list_window.kill()
-        w, h = 300, 400
-        self.invite_list_window = UIWindow(rect=pygame.Rect((WIDTH - w) // 2, (HEIGHT - h) // 2, w, h), manager=self.ui_manager, window_display_title="Mời bạn bè", resizable=False)
-        self.user_list = UISelectionList(relative_rect=pygame.Rect((10, 10), (280, 280)), item_list=[], manager=self.ui_manager, container=self.invite_list_window)
-        self.btn_send_invite_action = UIButton(relative_rect=pygame.Rect((10, 300), (280, 50)), text="Gửi Lời Mời", manager=self.ui_manager, container=self.invite_list_window)
+        # 1. Xóa bảng cũ nếu đang mở
+        if hasattr(self, 'invite_panel') and self.invite_panel is not None:
+            self.invite_panel.kill()
+
+        # 2. Tính toán vị trí
+        panel_w, panel_h = 400, 500
+        win_w, win_h = 800, 600
+        x = (win_w - panel_w) // 2
+        y = (win_h - panel_h) // 2
+
+        # 3. Tạo PANEL nền (Container chính)
+        from pygame_gui.core import ObjectID 
+        self.invite_panel = UIPanel(
+            relative_rect=pygame.Rect((x, y), (panel_w, panel_h)),
+            manager=self.ui_manager,
+            container=self.window,
+            object_id=ObjectID(object_id="#invite_board") 
+        )
+
+        # 4. Tiêu đề
+        UILabel(
+            relative_rect=pygame.Rect((0, 20), (panel_w, 40)),
+            text="Mời Bạn Bè",
+            manager=self.ui_manager,
+            container=self.invite_panel,
+            object_id=ObjectID(object_id="#lbl_xiangqi_text")
+        )
+
+        # ==========================================================
+        # [THÊM MỚI] 5. Tạo hình nền cho danh sách (bg_invite.png)
+        # ==========================================================
+        
+        # Xác định vị trí và kích thước chung cho cả Ảnh nền và List
+        list_rect = pygame.Rect((30, 70), (panel_w - 60, panel_h - 160))
+
+        try:
+            # Load ảnh bg_invite.png
+            # LƯU Ý: Đảm bảo file ảnh nằm đúng thư mục này
+            bg_list_surf = pygame.image.load('ui/assets/images/bg_list.jpg').convert_alpha()
+            # Co giãn ảnh cho vừa khít với khung danh sách
+            bg_list_surf = pygame.transform.scale(bg_list_surf, (list_rect.width, list_rect.height))
+        except FileNotFoundError:
+            print("Lỗi: Không tìm thấy bg_invite.png, dùng nền màu tạm.")
+            bg_list_surf = pygame.Surface((list_rect.width, list_rect.height))
+            bg_list_surf.fill((100, 80, 50)) # Màu nâu nếu lỗi ảnh
+
+        # Đặt tấm ảnh nền vào Panel
+        UIImage(
+            relative_rect=list_rect,
+            image_surface=bg_list_surf,
+            manager=self.ui_manager,
+            container=self.invite_panel
+        )
+
+        # 6. Tạo Danh Sách (Đè lên trên tấm ảnh vừa tạo)
+        self.friend_scroll_container = UIScrollingContainer(
+            relative_rect=list_rect, # Dùng lại vị trí bạn đã tính
+            manager=self.ui_manager,
+            container=self.invite_panel,
+            object_id=ObjectID(object_id="#transparent_list")
+        )
+        self.friend_buttons = [] # Tạo cái list để quản lý mấy cái nút tên
+        # ==========================================================
+
+        # 7. Nút Gửi
+        self.btn_send_invite_action = UIButton(
+            relative_rect=pygame.Rect((panel_w//2 - 100, panel_h - 80), (200, 50)), 
+            text="Gửi Lời Mời", 
+            manager=self.ui_manager, 
+            container=self.invite_panel,
+            object_id=ObjectID(object_id="#wood_btn")
+        )
+        
+        # 8. Nút Đóng (X)
+        self.btn_close_invite = UIButton(
+            relative_rect=pygame.Rect((panel_w - 40, 10), (30, 30)),
+            text="X",
+            manager=self.ui_manager,
+            container=self.invite_panel,
+            object_id=ObjectID(object_id="#close_btn_red")
+        )
+
+        # Cập nhật dữ liệu
         self.update_user_list_ui(self.users_data.values(), None)
 
     # ==========================================
@@ -233,7 +420,32 @@ class OnlineMenu:
                     threading.Thread(target=self._thread_join, args=(self.pending_room_id,), daemon=True).start()
 
         if event.type == pygame_gui.UI_BUTTON_PRESSED:
+            if hasattr(self, 'friend_items'):
+                for btn in self.friend_items:
+                    # Nếu cái nút vừa bấm (event.ui_element) là một trong các nút bạn bè
+                    if event.ui_element == btn and isinstance(btn, UIButton):
+                        # Lấy tên người chơi được giấu trong user_data
+                        target = getattr(btn, 'user_data', None)
+                        if target:
+                            print(f"Đang gửi lời mời tới: {target}")
+                            # Gửi lời mời ngay lập tức
+                            threading.Thread(target=self._thread_send_invite, args=(target,), daemon=True).start()
+                            
+                            # Thông báo lên màn hình (nếu có label status)
+                            if hasattr(self, 'lbl_lobby_status'):
+                                self.lbl_lobby_status.set_text(f"Đã mời {target}!")
+            if hasattr(self, 'btn_close_invite') and self.btn_close_invite is not None:
+                if event.ui_element == self.btn_close_invite:
+                    self.invite_panel.kill()
+                    self.invite_panel = None
+                    self.btn_close_invite = None # Xóa biến nút đi để tránh lỗi lần sau
+            # ----------------
             
+            # Các xử lý nút khác (ví dụ nút gửi lời mời)
+            if hasattr(self, 'btn_send_invite_action') and self.btn_send_invite_action:
+                 if event.ui_element == self.btn_send_invite_action:
+                     # Gọi hàm gửi lời mời ở đây...
+                     pass
             # --- [MỚI] LOGIN VIEW ---
             if self.current_view == "LOGIN":
                 if event.ui_element == self.btn_login_connect:
@@ -303,27 +515,69 @@ class OnlineMenu:
     # ==========================================
 
     def update_user_list_ui(self, users, invite=None):
-        if isinstance(users, list):
-            # [FIX QUAN TRỌNG] Chỉ lấy những người đang chơi CÙNG LOẠI GAME với mình
-            # Nếu mình đang ở 'chess' -> chỉ thấy người 'chess'
-            # Nếu mình đang ở 'chinese_chess' -> chỉ thấy người 'chinese_chess'
-            filtered_users = [
-                u for u in users 
-                if u.get('lobby_state') == self.current_game_type 
-            ]
+        # 1. Ép kiểu dữ liệu an toàn
+        current_users_list = list(users) if users is not None else []
+        if current_users_list:
+            filtered_users = [u for u in current_users_list if isinstance(u, dict) and u.get('lobby_state') == self.current_game_type]
             self.users_data = {u['username']: u for u in filtered_users}
-        else:
-             self.users_data = {}
 
-        # Cập nhật danh sách lên giao diện Popup (nếu đang mở)
-        if self.invite_list_window is not None and hasattr(self, 'user_list'):
-            # Lọc bỏ tên chính mình ra
-            new_names = [u['username'] for u in self.users_data.values() if u['username'] != self.network_manager.username]
-            self.user_list.set_item_list(new_names)
+        # 2. BẮT ĐẦU VẼ
+        if hasattr(self, 'friend_scroll_container'):
+            
+            # --- [SỬA LẠI ĐOẠN XÓA] ---
+            # Thay vì xóa tất cả (dễ xóa nhầm), ta chỉ xóa những gì ta đã tạo ra trong list 'friend_items'
+            if not hasattr(self, 'friend_items'):
+                self.friend_items = [] # Tạo sổ quản lý nếu chưa có
 
-        # Xử lý lời mời đến (Giữ nguyên)
-        if invite:
-            self._handle_incoming_invite(invite)
+            for item in self.friend_items:
+                item.kill() # Xóa từng món trong sổ
+            self.friend_items.clear() # Xóa xong thì xé nháp sổ
+            # --------------------------
+
+            # Tải ảnh thanh gỗ nhỏ
+            try:
+                raw_img = pygame.image.load('ui/assets/images/bg_invite.png').convert_alpha()
+                # [CHỈNH KÍCH THƯỚC THANH GỖ Ở ĐÂY CHO VỪA MẮT]
+                ITEM_W = 340 
+                ITEM_H = 45  
+                scaled_bg = pygame.transform.smoothscale(raw_img, (ITEM_W, ITEM_H))
+            except:
+                ITEM_W, ITEM_H = 220, 45
+                scaled_bg = pygame.Surface((ITEM_W, ITEM_H))
+
+            y = 0
+            container_w = self.friend_scroll_container.get_container().get_rect().width 
+            center_x = (container_w - ITEM_W) // 2
+
+            for u in self.users_data.values():
+                name = u.get('username', 'Unknown')
+                if name == self.network_manager.username: continue 
+
+                # A. Vẽ Hình Nền Nhỏ
+                img_item = UIImage(
+                    relative_rect=pygame.Rect((center_x, y), (ITEM_W, ITEM_H)),
+                    image_surface=scaled_bg,
+                    manager=self.ui_manager,
+                    container=self.friend_scroll_container
+                )
+                self.friend_items.append(img_item) # Ghi vào sổ để sau này xóa
+
+                # B. Vẽ Nút Trong Suốt
+                btn_item = UIButton(
+                    relative_rect=pygame.Rect((center_x, y), (ITEM_W, ITEM_H)),
+                    text=name,
+                    manager=self.ui_manager,
+                    container=self.friend_scroll_container,
+                    object_id=ObjectID(object_id="#invisible_btn")
+                )
+                btn_item.user_data = name 
+                self.friend_items.append(btn_item) # Ghi vào sổ để sau này xóa
+                
+                y += (ITEM_H + 5)
+
+            self.friend_scroll_container.set_scrollable_area_dimensions((container_w, y))
+
+        if invite: self._handle_incoming_invite(invite)
 
     def _handle_incoming_invite(self, invite):
         # Chỉ hiện nếu chưa có hộp thoại nào
