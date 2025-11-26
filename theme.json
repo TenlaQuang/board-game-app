@@ -318,19 +318,15 @@
     },
     "#transparent_input": {
         "colours": {
-            "normal_bg": "#00000000",      
+            "normal_bg": "#00000000",
+            "dark_bg": "#00000000", 
+            "focus_bg": "#00000000",
             "hovered_bg": "#00000000",
-            "active_bg": "#00000000",
-            "focused_bg": "#00000000",
-            "selected_bg": "#00000000",
-            "disabled_bg": "#00000000", 
-            
-            "normal_border": "#00000000",   
-            "focused_border": "#00000000",  
-            "selected_border": "#00000000",
-
+            "disabled_bg": "#00000000",
+            "normal_border": "#00000000",
+            "focus_border": "#00000000", 
             "normal_text": "#FFFFFF",
-            "selected_text": "#FFFFFF"
+            "focus_text": "#FFD700"
         },
         "font": {
             "name": "Arial",
@@ -387,7 +383,7 @@
         },
         "font": {
             "name": "Arial",
-            "size": "36", 
+            "size": "22", 
             "bold": "1",
             "regular_path": "ui/assets/fonts/font_vi.ttf"
         },
@@ -395,6 +391,84 @@
             "border_width": "0",
             "shadow_width": "0"
         }
+    },
+    "#invite_board": {
+        "images": {
+            "normal_image": { "path": "ui/assets/images/lobby_board.png" } 
+        },
+        "misc": {
+            "border_width": "0",
+            "shadow_width": "0"
+        }
+    },
+    "#transparent_list": {
+        "colours": {
+            "normal_bg": "#00000000",
+            "dark_bg": "#00000000",
+            "disabled_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "selected_bg": "##8B451380", 
+            "normal_text": "#FFFFFF",
+            "selected_text": "#FFD700",
+            "normal_border": "#00000000"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "20",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "border_width": "0"
+        }
+    },
+    "#close_btn_red": {
+        "colours": {
+            "normal_bg": "#AA0000",
+            "hovered_bg": "#FF0000",
+            "normal_text": "#FFFFFF",
+            "normal_border": "#FFFFFF"
+        },
+        "misc": {
+            "shape": "ellipse",
+            "border_width": "2"
+        },
+        "font": {
+            "size": "16",
+            "bold": "1"
+        }
+    },
+    "#friend_item_bg": {
+        "images": {
+            "normal_image": { "path": "ui/assets/images/bg_invite.png" },
+            "hovered_image": { "path": "ui/assets/images/bg_invite.png" },
+            "active_image": { "path": "ui/assets/images/bg_invite.png" }
+        },
+        "colours": {
+            "normal_text": "#FFFFFF",
+            "hovered_text": "#FFD700",
+            "active_text": "#FF0000"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "20",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "misc": {
+            "border_width": "0"
+        }
+    },
+    "#invisible_btn": {
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "normal_text": "#FFFFFF",
+            "hovered_text": "#FFD700",
+            "dark_bg": "#00000000"
+        },
+        "misc": { "border_width": "0" }
     }
     
 }
