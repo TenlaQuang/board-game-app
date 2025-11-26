@@ -168,6 +168,12 @@ class App:
             # --- VẼ GIAO DIỆN (DRAW) ---
             self.ui_manager.update(time_delta)
             
+            # [THÊM ĐOẠN NÀY VÀO ĐÂY] =====================================
+            # Gọi hàm update của OnlineMenu để tính toán góc xoay spinner
+            if self.online_menu:
+                self.online_menu.update(time_delta)
+            # =============================================================
+            
             if self.state == 'MAIN_MENU':
                 # 1. Vẽ nền Main Menu
                 if self.main_background: 
