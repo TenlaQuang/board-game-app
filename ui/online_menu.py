@@ -2,6 +2,7 @@ import pygame
 import pygame.scrap 
 import pygame_gui
 import threading
+import time
 from pygame_gui.elements import UIWindow, UIButton, UITextEntryLine, UILabel, UISelectionList, UIImage
 from pygame_gui.windows import UIConfirmationDialog 
 from utils.constants import WIDTH, HEIGHT
@@ -31,6 +32,7 @@ class OnlineMenu:
         self.invite_list_window = None 
         self.is_logged_in = False 
         self.invited_users = set() # Tập hợp chứa tên những người đã mời
+        self.invite_cooldowns = {}
 
         # Container chính
         # Kích thước cửa sổ là 800x600
@@ -464,11 +466,19 @@ class OnlineMenu:
                         # Lấy tên người chơi được giấu trong user_data
                         target = getattr(btn, 'user_data', None)
                         if target:
-                            # [THÊM] Ghi vào sổ tay là đã mời ông này rồi
-                            self.invited_users.add(target)
-                            # 1. Đổi chữ ngay lập tức
-                            btn.set_text(f"{target} (Đang gửi)")
-                            # 2. Khóa nút lại (làm mờ đi) để không bấm được nữa
+                          # [THÊM MỚI] Kiểm tra xem đang bị khóa không
+                            current_time = time.time()
+                            if target in self.invite_cooldowns:
+                                if current_time < self.invite_cooldowns[target]:
+                                    # Nếu chưa hết giờ thì bỏ qua, không làm gì
+                                    continue
+
+                            # [LOGIC MỜI]
+                            # 1. Đặt thời gian khóa (Hiện tại + 30 giây)
+                            self.invite_cooldowns[target] = current_time + 30
+                            
+                            # 2. Đổi chữ và khóa nút ngay lập tức
+                            btn.set_text(f"{target} (30s)")
                             btn.disable()
                             print(f"Đang gửi lời mời tới: {target}")
                             # Gửi lời mời ngay lập tức
@@ -630,13 +640,15 @@ class OnlineMenu:
                     object_id=ObjectID(object_id="#invisible_btn")
                 )
                 btn_item.user_data = name 
-                # [THÊM MỚI] KIỂM TRA TRẠNG THÁI ĐÃ MỜI
-                # ==================================================================
-                # Nếu tên này nằm trong sổ tay "đã mời", ta khóa nút lại ngay lập tức
-                if hasattr(self, 'invited_users') and name in self.invited_users:
-                    btn_item.set_text(f"{name} [OK]")
-                    btn_item.disable()
-                # ==================================================================
+                # [THÊM ĐOẠN NÀY] Kiểm tra nếu đang đếm ngược thì set luôn trạng thái
+                if hasattr(self, 'invite_cooldowns') and name in self.invite_cooldowns:
+                    remaining = int(self.invite_cooldowns[name] - time.time())
+                    if remaining > 0:
+                        btn_item.set_text(f"{name} ({remaining}s)")
+                        btn_item.disable()
+                    else:
+                        # Nếu hết giờ rồi thì xóa luôn cho sạch
+                        del self.invite_cooldowns[name]
                 self.friend_items.append(btn_item) # Ghi vào sổ để sau này xóa
                 
                 y += (ITEM_H + 5)
@@ -846,6 +858,33 @@ class OnlineMenu:
         elif self.loading_state == "SUCCESS" and hasattr(self, 'bar_fill'):
              self.bar_fill.set_dimensions((250, 30))
              self.lbl_percent.set_text("100/100")
+        # [THÊM ĐOẠN NÀY VÀO CUỐI HÀM] 
+        # Cập nhật các nút mời bạn bè
+        if hasattr(self, 'friend_items'):
+            current_time = time.time()
+            
+            for btn in self.friend_items:
+                # Chỉ xử lý nếu là nút bấm và có tên người chơi
+                if isinstance(btn, UIButton) and hasattr(btn, 'user_data'):
+                    name = btn.user_data
+                    
+                    # Nếu người này đang trong danh sách chờ (Cooldown)
+                    if name in self.invite_cooldowns:
+                        finish_time = self.invite_cooldowns[name]
+                        remaining = int(finish_time - current_time)
+                        
+                        if remaining > 0:
+                            # [SỬA DÒNG NÀY] Tạo chuỗi text mới: "Tên (Giây)"
+                            new_text = f"{name} ({remaining}s)"
+                            
+                            if btn.text != new_text: 
+                                btn.set_text(new_text)
+                                if btn.is_enabled: btn.disable()
+                        else:
+                            # Hết giờ -> Mở khóa và xóa khỏi danh sách
+                            del self.invite_cooldowns[name]
+                            btn.set_text(name) # Trả lại tên gốc
+                            btn.enable()       # Cho phép bấm lại
     # Thêm hàm này vào class OnlineMenu
     def close_invite_popup(self):
         """Hàm chuyên dùng để tắt sạch sẽ bảng mời"""
