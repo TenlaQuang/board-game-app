@@ -11,7 +11,7 @@ Dự án game cờ vua và cờ tướng peer-to-peer lai viết bằng Python +
 - `games/`: Các loại game (cờ vua, cờ tướng)
 - `utils/`: Các hàm tiện ích và hằng số
 - `tests/`: Unit test
-
+.......................................
 ## Cách chạy app chơi cờ sử dụng P2P lai 
 
 ```bash
