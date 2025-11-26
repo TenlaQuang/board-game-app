@@ -407,7 +407,7 @@
             "dark_bg": "#00000000",
             "disabled_bg": "#00000000",
             "hovered_bg": "#00000000",
-            "selected_bg": "##8B451380", 
+            "selected_bg": "#8B451380", 
             "normal_text": "#FFFFFF",
             "selected_text": "#FFD700",
             "normal_border": "#00000000"
@@ -469,8 +469,52 @@
             "dark_bg": "#00000000"
         },
         "misc": { "border_width": "0" }
-    }
+    },
+    "#loading_panel": {
+        "colours": {
+            "dark_bg": "#000000CC",
+            "normal_bg": "#000000CC"
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "corner_radius": "10",
+            "border_width": "0",
+            "shadow_width": "0"
+        }
+    },
+    "#confirmation_dialog": {
+        "window": {
+            "title_bar": {
+                "font": {
+                    "name": "Arial",
+                    "size": "18",
+                    "regular_path": "ui/assets/fonts/font_vi.ttf",
+                    "bold_path": "ui/assets/fonts/font_vi.ttf"
+                }
+            }
+        }
+    },
     
+    "#confirmation_dialog.text_box": {
+        "font": {
+            "name": "Arial",
+            "size": "16",
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "bold_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "colours": {
+            "normal_bg": "#2C2F33"
+        }
+    },
+
+    "#confirmation_dialog.button": {
+        "font": {
+            "name": "Arial",
+            "size": "16",
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "bold_path": "ui/assets/fonts/font_vi.ttf"
+        }
+    }
 }
 
 
