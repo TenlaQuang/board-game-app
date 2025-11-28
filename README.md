@@ -53,6 +53,7 @@ python -m venv venv
 
 # Kích hoạt môi trường ảo
 # Windows:
+python -m venv venv
 venv\Scripts\activate
 # macOS/Linux:
 # source venv/bin/activate
