@@ -462,38 +462,57 @@
     "#invisible_btn": {
         "colours": {
             "normal_bg": "#00000000",
-            "hovered_bg": "#00000000",
-            "active_bg": "#00000000",
-            "normal_text": "#FFFFFF",
-            "hovered_text": "#FFD700",
             "dark_bg": "#00000000"
         },
         "misc": { "border_width": "0" }
     },
-    "#loading_panel": {
+    "#transparent_btn_large": {
         "colours": {
-            "dark_bg": "#000000CC",
-            "normal_bg": "#000000CC"
+            "normal_bg": "#00000000",
+            "hovered_bg": "#FFFFFF20", 
+            "active_bg": "#FFFFFF40",
+            "normal_border": "#00000000"
+        }
+    },
+    "#card_title": {
+        "font": {
+            "name": "arial",
+            "size": "24",
+            "bold": "1",
+             "regular_path": "ui/assets/fonts/font_vi.ttf"
         },
-        "misc": {
-            "shape": "rounded_rectangle",
-            "corner_radius": "10",
-            "border_width": "0",
-            "shadow_width": "0"
+        "colours": {
+            "normal_text": "#FFD700" 
         }
     },
-    "#confirmation_dialog": {
-        "window": {
-            "title_bar": {
-                "font": {
-                    "name": "Arial",
-                    "size": "18",
-                    "regular_path": "ui/assets/fonts/font_vi.ttf",
-                    "bold_path": "ui/assets/fonts/font_vi.ttf"
-                }
-            }
-        }
+    "#card_title": {
+        "font": {
+            "name": "arial",
+            "size": "26",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "colours": {
+            "normal_text": "#FFD700",
+            "text_shadow": "#000000" 
+        },
+        "text_shadow": "2" 
     },
+
+    "#card_desc": {
+        "font": {
+            "name": "arial",
+            "size": "14",
+            "italic": "1",
+             "regular_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "colours": {
+            "normal_text": "#FFFFFF",
+            "text_shadow": "#000000"
+        },
+        "text_shadow": "1",
+        "text_horiz_alignment": "center"
+    }
     
     "#confirmation_dialog.text_box": {
         "font": {
