@@ -407,7 +407,7 @@
             "dark_bg": "#00000000",
             "disabled_bg": "#00000000",
             "hovered_bg": "#00000000",
-            "selected_bg": "##8B451380", 
+            "selected_bg": "#8B451380", 
             "normal_text": "#FFFFFF",
             "selected_text": "#FFD700",
             "normal_border": "#00000000"
@@ -514,6 +514,26 @@
         "text_horiz_alignment": "center"
     }
     
+    "#confirmation_dialog.text_box": {
+        "font": {
+            "name": "Arial",
+            "size": "16",
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "bold_path": "ui/assets/fonts/font_vi.ttf"
+        },
+        "colours": {
+            "normal_bg": "#2C2F33"
+        }
+    },
+
+    "#confirmation_dialog.button": {
+        "font": {
+            "name": "Arial",
+            "size": "16",
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "bold_path": "ui/assets/fonts/font_vi.ttf"
+        }
+    }
 }
 
 

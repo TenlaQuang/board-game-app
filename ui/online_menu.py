@@ -2,6 +2,7 @@ import pygame
 import pygame.scrap 
 import pygame_gui
 import threading
+import time
 from pygame_gui.elements import UIWindow, UIButton, UITextEntryLine, UILabel, UISelectionList, UIImage
 from pygame_gui.windows import UIConfirmationDialog 
 from utils.constants import WIDTH, HEIGHT
@@ -9,6 +10,7 @@ from network import web_matchmaking
 from pygame_gui.core import ObjectID
 from pygame_gui.elements import UIPanel
 from pygame_gui.elements import UIScrollingContainer
+from pygame_gui.elements import UIProgressBar
 class OnlineMenu:
     def __init__(self, screen, ui_manager, network_manager):
         self.screen = screen
@@ -29,13 +31,26 @@ class OnlineMenu:
         self.invite_dialog = None
         self.invite_list_window = None 
         self.is_logged_in = False 
+        self.invited_users = set() # Tập hợp chứa tên những người đã mời
+        self.invite_cooldowns = {}
 
         # Container chính
         # Kích thước cửa sổ là 800x600
         win_width, win_height = 800, 600
         self.rect = pygame.Rect(0, 0, win_width, win_height)
         self.rect.center = (WIDTH // 2, HEIGHT // 2)
+
+        # [THÊM MỚI] --- Chuẩn bị cho Loading Screen ---
+        self.loading_panel = None
+        self.loading_angle = 0
+        self.loading_state = "IDLE" # Các trạng thái: IDLE, LOADING, SUCCESS, FAIL
         
+        # Tạo hình ảnh cái vòng xoay (Spinner) bằng code (đỡ phải tải ảnh)
+        self.spinner_surface = pygame.Surface((60, 60), pygame.SRCALPHA)
+        # Vẽ vòng tròn trắng, khuyết 1 góc
+        pygame.draw.arc(self.spinner_surface, (255, 255, 255), (5, 5, 50, 50), 0, 1.5 * 3.14, 4)
+        self.current_spinner_img = None # Dùng để tham chiếu UI Element
+            
         self.window = UIWindow(
             rect=self.rect,
             manager=ui_manager,
@@ -78,14 +93,37 @@ class OnlineMenu:
 
     def clear_ui(self):
         """Xóa sạch giao diện cũ"""
+        # 1. Xóa các UI chính (Nút, Label, Ảnh nền...)
         for element in self.ui_elements:
             element.kill()
         self.ui_elements = []
-        self.close_invite_popup()
+
+        # 2. [QUAN TRỌNG] Xóa danh sách bạn bè/người chơi (Đây là cái đang bị lỗi)
+        if hasattr(self, 'friend_items'):
+            for item in self.friend_items:
+                item.kill()
+            self.friend_items.clear()
+
+        # 3. Xóa container chứa danh sách (nếu có)
+        if hasattr(self, 'friend_scroll_container') and self.friend_scroll_container:
+            self.friend_scroll_container.kill()
+            self.friend_scroll_container = None
+
+        # 4. Xóa bảng mời (nếu đang mở)
+        if hasattr(self, 'invite_panel') and self.invite_panel:
+            self.invite_panel.kill()
+            self.invite_panel = None
+
+        # 5. Xóa cửa sổ danh sách mời (loại window)
         if self.invite_list_window:
             self.invite_list_window.kill()
             self.invite_list_window = None
 
+        # 6. Xóa bảng Loading (nếu đang xoay)
+        if hasattr(self, 'loading_panel') and self.loading_panel:
+            self.loading_panel.kill()
+            self.loading_panel = None
+            self.loading_state = "IDLE"
     # ============================================================
     # [THÊM HÌNH NỀN] 2. HÀM TRỢ GIÚP THÊM NỀN VÀO CỬA SỔ
     # ============================================================
@@ -566,6 +604,20 @@ class OnlineMenu:
                         # Lấy tên người chơi được giấu trong user_data
                         target = getattr(btn, 'user_data', None)
                         if target:
+                          # [THÊM MỚI] Kiểm tra xem đang bị khóa không
+                            current_time = time.time()
+                            if target in self.invite_cooldowns:
+                                if current_time < self.invite_cooldowns[target]:
+                                    # Nếu chưa hết giờ thì bỏ qua, không làm gì
+                                    continue
+
+                            # [LOGIC MỜI]
+                            # 1. Đặt thời gian khóa (Hiện tại + 30 giây)
+                            self.invite_cooldowns[target] = current_time + 30
+                            
+                            # 2. Đổi chữ và khóa nút ngay lập tức
+                            btn.set_text(f"{target} (30s)")
+                            btn.disable()
                             print(f"Đang gửi lời mời tới: {target}")
                             # Gửi lời mời ngay lập tức
                             threading.Thread(target=self._thread_send_invite, args=(target,), daemon=True).start()
@@ -575,7 +627,8 @@ class OnlineMenu:
                                 self.lbl_lobby_status.set_text(f"Đã mời {target}!")
             if hasattr(self, 'btn_close_invite') and self.btn_close_invite is not None:
                 if event.ui_element == self.btn_close_invite:
-                    self.close_invite_popup()
+               
+                    self.close_invite_popup() # <--- Gọi hàm dọn dẹp chuyên dụng
             # ----------------
             
             # Các xử lý nút khác (ví dụ nút gửi lời mời)
@@ -598,10 +651,14 @@ class OnlineMenu:
             # --- MAIN VIEW ---
             elif self.current_view == "MAIN":
                 if event.ui_element == self.btn_create_main:
+                    # [SỬA] Gọi hàm hiển thị Loading trước khi chạy Thread
+                    self.show_loading_popup("Đang kết nối...") 
                     threading.Thread(target=self._thread_create, daemon=True).start()
+
                 elif event.ui_element == self.btn_join_main:
                     self.setup_join_view()
-                elif event.ui_element == self.btn_logout: # Nút logout quay về Login
+
+                elif event.ui_element == self.btn_logout: 
                     self.is_logged_in = False
                     self.network_manager.stop_polling_users()
                     self.setup_login_view()
@@ -644,7 +701,15 @@ class OnlineMenu:
                     self.lbl_lobby_status.set_text(f"Đã gửi mời tới {self.target_player}")
                     threading.Thread(target=self._thread_send_invite, args=(self.target_player,), daemon=True).start()
                     if self.invite_list_window: self.invite_list_window.kill(); self.invite_list_window = None
-
+                    
+            # [THÊM MỚI] Xử lý nút Thử lại trong Loading Panel
+            if event.type == pygame_gui.UI_BUTTON_PRESSED:
+                if hasattr(self, 'btn_retry') and event.ui_element == self.btn_retry:
+                    # Tắt bảng loading để người dùng bấm lại từ đầu
+                    if self.loading_panel:
+                        self.loading_panel.kill()
+                        self.loading_panel = None
+                        self.loading_state = "IDLE"
         return None
 
     # ==========================================
@@ -652,6 +717,12 @@ class OnlineMenu:
     # ==========================================
 
     def update_user_list_ui(self, users, invite=None):
+        # [THÊM ĐOẠN NÀY VÀO ĐẦU HÀM]
+        # Nếu bảng mời (invite_panel) đã bị xóa, hoặc container không còn -> DỪNG NGAY
+        if not hasattr(self, 'invite_panel') or self.invite_panel is None:
+            return
+        if not hasattr(self, 'friend_scroll_container') or self.friend_scroll_container is None:
+            return
         # 1. Ép kiểu dữ liệu an toàn
         current_users_list = list(users) if users is not None else []
         if current_users_list:
@@ -708,6 +779,15 @@ class OnlineMenu:
                     object_id=ObjectID(object_id="#invisible_btn")
                 )
                 btn_item.user_data = name 
+                # [THÊM ĐOẠN NÀY] Kiểm tra nếu đang đếm ngược thì set luôn trạng thái
+                if hasattr(self, 'invite_cooldowns') and name in self.invite_cooldowns:
+                    remaining = int(self.invite_cooldowns[name] - time.time())
+                    if remaining > 0:
+                        btn_item.set_text(f"{name} ({remaining}s)")
+                        btn_item.disable()
+                    else:
+                        # Nếu hết giờ rồi thì xóa luôn cho sạch
+                        del self.invite_cooldowns[name]
                 self.friend_items.append(btn_item) # Ghi vào sổ để sau này xóa
                 
                 y += (ITEM_H + 5)
@@ -750,52 +830,62 @@ class OnlineMenu:
         # Vào màn hình chính
         self.current_view = "SWITCH_TO_MAIN"
 
-    # [FIX] Cập nhật hàm này trong ui/online_menu.py
+    # [SỬA LẠI] Hàm _thread_create
     def _thread_create(self):
-        # Đảm bảo reset sạch sẽ kết nối cũ trước khi tạo mới
+        self.loading_state = "LOADING" # Bắt đầu xoay
+        
+        # Reset kết nối
+        self.update_loading_text("[NET] Đang dọn dẹp mạng...")
         self.network_manager.reset_connection()
         
-        # Bắt đầu mở cổng lắng nghe mới
         port = self.network_manager.start_hosting_phase()
         if port == 0:
-            print("Lỗi: Không thể mở port trên máy tính!")
+            self.loading_state = "FAIL"
+            self.update_loading_text("Lỗi: Không mở được Port!")
             return
 
-        print(f"[NET] Đang gửi yêu cầu tạo phòng (Port {port})...")
+        self.update_loading_text(f"Đang tạo phòng (Port {port})...")
         
-        # [MỚI] Cơ chế thử lại 3 lần (Retry Logic)
         rid = None
         for i in range(3):
+            # Cập nhật text báo thử lại
+            if i > 0:
+                self.update_loading_text(f"Thử lại lần {i+1}...")
+                
             rid = web_matchmaking.create_room_online(
                 self.network_manager.username, 
                 port, 
                 self.current_game_type
             )
+            
             if rid:
-                print(f"[NET] Tạo phòng thành công: {rid}")
                 break
             else:
-                print(f"[NET] Tạo phòng thất bại (Lần {i+1}). Đang thử lại...")
                 import time
-                time.sleep(1) # Nghỉ 1 giây rồi thử lại
+                time.sleep(1) # Nghỉ 1 chút
         
         if rid:
+            # --- THÀNH CÔNG ---
+            self.loading_state = "SUCCESS"
+            self.update_loading_text("TẠO PHÒNG THÀNH CÔNG!")
+            import time
+            time.sleep(1.5) # Để người dùng kịp đọc chữ "Thành công"
+            
             self.host_room_id = rid
-            self.current_view = "SWITCH_TO_LOBBY"
+            self.current_view = "SWITCH_TO_LOBBY" # Chuyển màn hình
+            self.loading_state = "IDLE" # Reset trạng thái
         else:
-            print("[NET] Lỗi: Server không phản hồi sau 3 lần thử.")
-            # Có thể thêm thông báo lỗi lên UI nếu muốn
+            # --- THẤT BẠI ---
+            self.loading_state = "FAIL"
+            self.update_loading_text("Lỗi: Server không phản hồi.")
 
-    def _thread_join(self, rid):
-        host_info = web_matchmaking.join_room_online(self.network_manager.username, rid)
-        if host_info:
-            ip, port = host_info.get('host_ip'), host_info.get('host_port')
-            if self.network_manager.connect_to_peer(ip, port):
-                print("Kết nối P2P thành công!")
-            else:
-                if hasattr(self, 'lbl_status'): self.lbl_status.set_text("Lỗi kết nối P2P.")
-        else:
-            if hasattr(self, 'lbl_status'): self.lbl_status.set_text("Không tìm thấy phòng!")
+    # Hàm phụ để update text an toàn từ thread
+    def update_loading_text(self, text):
+        # Lưu ý: Pygame GUI không an toàn tuyệt đối với Thread, 
+        # nhưng set_text thường ổn định nếu không tạo/xóa element.
+        if hasattr(self, 'lbl_loading_status') and self.loading_panel:
+            self.lbl_loading_status.set_text(text)
+        print(text) # Vẫn in ra console để debug
 
     def _thread_send_invite(self, target_name):
         web_matchmaking.send_invite_online(self.network_manager.username, target_name, self.host_room_id, self.current_game_type)
@@ -814,7 +904,130 @@ class OnlineMenu:
 
         if self.current_view in ["LOBBY", "JOIN"]:
              self.setup_main_view()
+    
+    # [THÊM MỚI] Hàm hiển thị bảng Loading
+    def show_loading_popup(self, text="Đang xử lý..."):
+        if self.loading_panel:
+            self.loading_panel.kill()
+
+        win_w, win_h = 800, 600
+        panel_w, panel_h = 300, 180
+        x = (win_w - panel_w) // 2
+        y = (win_h - panel_h) // 2
+        
+        # 1. Panel nền (Vẫn dùng theme JSON để trong suốt)
+        self.loading_panel = UIPanel(
+            relative_rect=pygame.Rect(x, y, panel_w, panel_h),
+            manager=self.ui_manager,
+            container=self.window,
+            object_id="#loading_panel"
+        )
+
+        # --- [SỬA LẠI ĐOẠN NÀY - KHÔNG DÙNG UIPANEL NỮA] ---
+        
+        # 2. Tạo thanh nền màu XÁM (Bằng code Python thuần)
+        # Tạo 1 tấm ảnh màu xám kích thước 250x30
+        bg_surface = pygame.Surface((250, 30))
+        bg_surface.fill(pygame.Color("#555555")) 
+        
+        self.bar_bg = UIImage(
+            relative_rect=pygame.Rect((25, 40), (250, 30)),
+            image_surface=bg_surface, # <--- Nhét ảnh xám vào
+            manager=self.ui_manager,
+            container=self.loading_panel
+        )
+        
+        # 3. Tạo thanh màu XANH (Tạo 1 ảnh màu xanh full trước)
+        self.green_surface = pygame.Surface((250, 30))
+        self.green_surface.fill(pygame.Color("#4CAF50"))
+        
+        # Tạo UIImage với chiều rộng ban đầu = 0
+        self.current_fill_width = 0
+        self.bar_fill = UIImage(
+            relative_rect=pygame.Rect((25, 40), (0, 30)), # Width = 0
+            image_surface=self.green_surface, # <--- Nhét ảnh xanh vào
+            manager=self.ui_manager,
+            container=self.loading_panel
+        )
+        
+        # 4. Label hiển thị số (Đè lên trên cùng)
+        self.lbl_percent = UILabel(
+            relative_rect=pygame.Rect((25, 40), (250, 30)),
+            text="0/100",
+            manager=self.ui_manager,
+            container=self.loading_panel,
+            object_id="#lbl_percent"
+        )
+        # ----------------------------------------------------
+
+        self.lbl_loading_status = UILabel(
+            relative_rect=pygame.Rect((10, 80), (280, 30)),
+            text=text,
+            manager=self.ui_manager,
+            container=self.loading_panel
+        )
+        self.btn_retry = UIButton(
+            relative_rect=pygame.Rect((75, 120), (150, 40)),
+            text="Thử lại",
+            manager=self.ui_manager,
+            container=self.loading_panel
+        )
+        self.btn_retry.hide()
+    # [THÊM MỚI] Hàm cập nhật hiệu ứng (Đặt trong OnlineMenu)
+    def update(self, time_delta):
+        # 1. Đang Loading
+        if self.loading_state == "LOADING" and hasattr(self, 'bar_fill'):
+            if self.current_fill_width < 225: 
+                self.current_fill_width += (100 * time_delta)
+                width_now = int(self.current_fill_width)
+                
+                # [QUAN TRỌNG] Chỉ update nếu width > 0 để tránh lỗi
+                if width_now > 0:
+                    # Kéo giãn khung hình ảnh ra
+                    self.bar_fill.set_dimensions((width_now, 30))
+                    
+                    # Trick: Do UIImage tự scale ảnh, mà ảnh gốc là 250px
+                    # Khi set width nhỏ lại, nó sẽ bóp méo ảnh.
+                    # Nhưng vì ảnh là MỘT MÀU XANH ĐỒNG NHẤT -> Méo hay không nhìn y hệt nhau!
+                
+                percent = int((width_now / 250) * 100)
+                self.lbl_percent.set_text(f"{percent}/100")
+
+        # 2. Thành Công
+        elif self.loading_state == "SUCCESS" and hasattr(self, 'bar_fill'):
+             self.bar_fill.set_dimensions((250, 30))
+             self.lbl_percent.set_text("100/100")
+        # [THÊM ĐOẠN NÀY VÀO CUỐI HÀM] 
+        # Cập nhật các nút mời bạn bè
+        if hasattr(self, 'friend_items'):
+            current_time = time.time()
+            
+            for btn in self.friend_items:
+                # Chỉ xử lý nếu là nút bấm và có tên người chơi
+                if isinstance(btn, UIButton) and hasattr(btn, 'user_data'):
+                    name = btn.user_data
+                    
+                    # Nếu người này đang trong danh sách chờ (Cooldown)
+                    if name in self.invite_cooldowns:
+                        finish_time = self.invite_cooldowns[name]
+                        remaining = int(finish_time - current_time)
+                        
+                        if remaining > 0:
+                            # [SỬA DÒNG NÀY] Tạo chuỗi text mới: "Tên (Giây)"
+                            new_text = f"{name} ({remaining}s)"
+                            
+                            if btn.text != new_text: 
+                                btn.set_text(new_text)
+                                if btn.is_enabled: btn.disable()
+                        else:
+                            # Hết giờ -> Mở khóa và xóa khỏi danh sách
+                            del self.invite_cooldowns[name]
+                            btn.set_text(name) # Trả lại tên gốc
+                            btn.enable()       # Cho phép bấm lại
+    # Thêm hàm này vào class OnlineMenu
     def close_invite_popup(self):
+        """Hàm chuyên dùng để tắt sạch sẽ bảng mời"""
+        # 1. Xóa Panel chính
         if hasattr(self, 'invite_panel') and self.invite_panel:
             self.invite_panel.kill()
             self.invite_panel = None
