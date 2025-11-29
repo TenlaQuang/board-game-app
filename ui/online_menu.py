@@ -730,7 +730,7 @@ class OnlineMenu:
             self.users_data = {u['username']: u for u in filtered_users}
 
         # 2. BẮT ĐẦU VẼ
-        if hasattr(self, 'friend_scroll_container'):
+        if hasattr(self, 'friend_scroll_container') and self.friend_scroll_container is not None:
             
             # --- [SỬA LẠI ĐOẠN XÓA] ---
             # Thay vì xóa tất cả (dễ xóa nhầm), ta chỉ xóa những gì ta đã tạo ra trong list 'friend_items'
@@ -1031,7 +1031,12 @@ class OnlineMenu:
         if hasattr(self, 'invite_panel') and self.invite_panel:
             self.invite_panel.kill()
             self.invite_panel = None
-        
+        if hasattr(self, 'friend_scroll_container'):
+            self.friend_scroll_container = None 
+
+        # 3. Hủy nút đóng
+        if hasattr(self, 'btn_close_invite'):
+            self.btn_close_invite = None
         # Xóa sạch các nút con
         if hasattr(self, 'friend_items'):
             for item in self.friend_items:
