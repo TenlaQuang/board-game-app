@@ -234,22 +234,74 @@ class OnlineMenu:
     # ==========================================
     def setup_main_view(self):
         self.clear_ui()
-        # [THÊM HÌNH NỀN] Gọi hàm thêm nền ngay sau khi clear
-        self._add_common_background()
+        self._add_common_background() # Thêm hình nền gỗ tối
 
         self.current_view = "MAIN"
-        self.window.set_display_title(f"Sảnh Chính - {self.network_manager.username}")
+        # Ẩn thanh tiêu đề cửa sổ đi cho đẹp (hoặc để cũng được)
+        self.window.set_display_title(f"Sảnh Chính")
 
-        btn_create = UIButton(pygame.Rect((100, 150), (250, 200)), "TẠO PHÒNG", self.ui_manager, container=self.window)
-        btn_join = UIButton(pygame.Rect((450, 150), (250, 200)), "NHẬP ID PHÒNG", self.ui_manager, container=self.window)
-        
-        lbl_welcome = UILabel(pygame.Rect((200, 430), (400, 40)), f"Xin chào, {self.network_manager.username}!", self.ui_manager, container=self.window)
-        
-        self.btn_logout = UIButton(pygame.Rect((20, 500), (100, 40)), "Đăng xuất", self.ui_manager, container=self.window)
+        # --- A. HEADER (Dòng chào mừng) ---
+        # Tận dụng lại ảnh 'id_input_bg.png' làm nền cho tiêu đề
+        header_rect = pygame.Rect((0, 0), (400, 60))
+        header_rect.centerx = 400 
+        header_rect.y = 50       
 
-        self.ui_elements.extend([btn_create, btn_join, lbl_welcome, self.btn_logout])
-        self.btn_create_main = btn_create
-        self.btn_join_main = btn_join
+        try:
+            banner_img = pygame.image.load('ui/assets/images/id_input_bg.png').convert_alpha()
+            banner_img = pygame.transform.smoothscale(banner_img, (400, 60))
+            UIImage(relative_rect=header_rect, image_surface=banner_img, manager=self.ui_manager, container=self.window)
+        except: pass # Không có ảnh thì thôi
+        
+        lbl_welcome = UILabel(
+            relative_rect=header_rect, 
+            text=f"Xin chào chủ tướng, {self.network_manager.username}!", 
+            manager=self.ui_manager, 
+            container=self.window,
+            object_id=ObjectID(object_id="#lbl_gold_text")
+        )
+        self.ui_elements.append(lbl_welcome)
+
+        # --- B. HAI THẺ BÀI LỚN (CARDS) ---
+        # Tính toán vị trí cho cân đối
+        card_w, card_h = 240, 300
+        gap = 60
+        start_y = 140
+        left_x = (800 - (card_w * 2 + gap)) // 2 
+        
+        rect_create = pygame.Rect((left_x, start_y), (card_w, card_h))
+        rect_join = pygame.Rect((left_x + card_w + gap, start_y), (card_w, card_h))
+
+        # [THẺ 1] TẠO PHÒNG
+        self.btn_create_main = self._create_card_button(
+            rect=rect_create,
+            title="TẠO PHÒNG",
+            sub_text="Làm chủ phòng đấu & Mời bạn bè",
+            color_fallback=(100, 50, 50, 200), # Màu đỏ nâu dự phòng
+            image_path='ui/assets/images/card_create_bg.png', # <--- Tên file ảnh bạn tìm
+            action_id="#transparent_btn_large"
+        )
+
+        # [THẺ 2] NHẬP ID
+        self.btn_join_main = self._create_card_button(
+            rect=rect_join,
+            title="NHẬP ID",
+            sub_text="Tham chiến vào phòng có sẵn",
+            color_fallback=(50, 70, 100, 200), # Màu xanh dương dự phòng
+            image_path='ui/assets/images/card_join_bg.png', # <--- Tên file ảnh bạn tìm
+            action_id="#transparent_btn_large"
+        )
+        
+        self.ui_elements.extend([self.btn_create_main, self.btn_join_main])
+
+        # --- C. NÚT ĐĂNG XUẤT ---
+        # Đặt thấp xuống một chút cho thoáng
+        self.btn_logout = UIButton(
+            relative_rect=pygame.Rect((30, 480), (120, 40)), 
+            text="< Đăng xuất", 
+            manager=self.ui_manager, 
+            container=self.window
+        )
+        self.ui_elements.append(self.btn_logout)
 
     # ==========================================
     # 2. NHẬP ID
@@ -954,3 +1006,48 @@ class OnlineMenu:
             self.loading_state = "FAIL"
             if hasattr(self, 'lbl_loading_status'):
                  self.lbl_loading_status.set_text("Không tìm thấy phòng!")
+    def _crop_rounded_image(self, surface, radius):
+        rect = surface.get_rect()
+        mask = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255), rect, border_radius=radius)
+        result = pygame.Surface(rect.size, pygame.SRCALPHA)
+        result.blit(surface, (0, 0))
+        result.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        return result
+    def _create_card_button(self, rect, title, sub_text, color_fallback, image_path, action_id):
+        # 1. XỬ LÝ ẢNH NỀN
+        try:
+            # Load ảnh
+            raw_img = pygame.image.load(image_path).convert_alpha()
+            bg_surf = pygame.transform.smoothscale(raw_img, (rect.width, rect.height))
+            
+            # Phủ lớp đen mờ để nổi chữ (Opacity 80/255)
+            dark_overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            dark_overlay.fill((0, 0, 0, 80)) 
+            bg_surf.blit(dark_overlay, (0, 0))
+
+            # Cắt bo tròn góc (Radius = 20)
+            bg_surf = self._crop_rounded_image(bg_surf, 20)
+
+            # Vẽ viền màu Nâu Gỗ (hoặc Vàng) bao quanh
+
+        except (FileNotFoundError, pygame.error):
+            # Nếu không có ảnh thì vẽ khung màu
+            bg_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(bg_surf, color_fallback, bg_surf.get_rect(), border_radius=20)
+            pygame.draw.rect(bg_surf, (255, 255, 255), bg_surf.get_rect(), width=2, border_radius=20)
+
+        # Hiển thị tấm ảnh nền
+        UIImage(relative_rect=rect, image_surface=bg_surf, manager=self.ui_manager, container=self.window)
+
+        # 2. TIÊU ĐỀ (Title) - Chữ to màu vàng
+        title_rect = pygame.Rect((rect.x, rect.y + 40), (rect.width, 40))
+        UILabel(relative_rect=title_rect, text=title, manager=self.ui_manager, container=self.window, object_id=ObjectID(object_id="#card_title"))
+
+        # 3. MÔ TẢ (Sub-text) - Chữ nhỏ phía dưới
+        sub_rect = pygame.Rect((rect.x + 10, rect.bottom - 50), (rect.width - 20, 50))
+        UILabel(relative_rect=sub_rect, text=sub_text, manager=self.ui_manager, container=self.window, object_id=ObjectID(object_id="#card_desc"))
+
+        # 4. NÚT BẤM TRONG SUỐT (Đè lên trên cùng)
+        btn = UIButton(relative_rect=rect, text="", manager=self.ui_manager, container=self.window, object_id=ObjectID(object_id=action_id))
+        return btn
