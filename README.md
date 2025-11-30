@@ -31,7 +31,8 @@ Sau khi kết nối, dữ liệu bàn cờ (nước đi, chat) sẽ được tru
 - `games/`: Các loại game (cờ vua, cờ tướng)
 - `utils/`: Các hàm tiện ích và hằng số
 .......................................
-🚀 Hướng dẫn cài đặt & Chạy
+
+## 🚀 Hướng dẫn cài đặt & Chạy
 
 1. Yêu cầu hệ thống
 
