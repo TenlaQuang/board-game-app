@@ -241,7 +241,8 @@ class BoardUI:
                 self.game_logic.winner = opponent_color; self.game_logic.game_over = True
                 if self.confirmation_dialog: self.confirmation_dialog.kill(); self.confirmation_dialog = None
             elif action == 'OFFER_DRAW':
-                self.sidebar.add_message("Hệ thống", "Đã gửi lời cầu hòa...")
+                # self.sidebar.add_message("Hệ thống", "Đã gửi lời cầu hòa...")
+                pass
 
         if self.game_logic.game_over: return 
 

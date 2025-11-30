@@ -936,6 +936,18 @@ class OnlineMenu:
         elif self.loading_state == "SUCCESS" and hasattr(self, 'bar_fill'):
              self.bar_fill.set_dimensions((250, 30))
              self.lbl_percent.set_text("100/100")
+        # [SỬA ĐOẠN NÀY]
+        elif self.loading_state == "FAIL":
+            # 1. Đổi màu thanh process thành màu ĐỎ báo lỗi (Tùy chọn, cho đẹp)
+            if hasattr(self, 'green_surface') and hasattr(self, 'bar_fill'):
+                self.green_surface.fill(pygame.Color("#FF5555")) # Màu đỏ
+                self.bar_fill.set_image(self.green_surface)
+
+            # 2. Hiện nút Đóng/Thử lại lên
+            if hasattr(self, 'btn_retry') and self.btn_retry:
+                self.btn_retry.set_text("Đóng") # Đổi chữ thành "Đóng"
+                self.btn_retry.show()           # Hiện nút lên
+        
         # [THÊM ĐOẠN NÀY VÀO CUỐI HÀM] 
         # Cập nhật các nút mời bạn bè
         if hasattr(self, 'friend_items'):
