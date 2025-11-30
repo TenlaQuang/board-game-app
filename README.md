@@ -51,9 +51,11 @@ cd board-game-app
 python -m venv venv
 
 # Kích hoạt môi trường ảo
-# Windows:venv\Scripts\activate
+# Windows:
+venv\Scripts\activate
 
-# macOS/Linux: source venv/bin/activate
+# macOS/Linux:
+source venv/bin/activate
 
 # Cài đặt các thư viện
 pip install -r requirements.txt
