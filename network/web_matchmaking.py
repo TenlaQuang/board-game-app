@@ -96,16 +96,40 @@ def join_room_online(username: str, room_id: str) -> Optional[Dict]:
     except: pass
     return None
 
+# def send_invite_online(challenger: str, target: str, room_id: str, game_type: str):
+#     url = f"{WEB_SERVER}/send-invite"
+#     try:
+#         session.post(url, json={
+#             "challenger": challenger,
+#             "target": target,
+#             "room_id": room_id,
+#             "game_type": game_type,
+#         }, timeout=2)
+#     except: pass
 def send_invite_online(challenger: str, target: str, room_id: str, game_type: str):
     url = f"{WEB_SERVER}/send-invite"
     try:
-        session.post(url, json={
-            "challenger": challenger,
-            "target": target,
+        # [SỬA LẠI ĐÚNG NHƯ SERVER YÊU CẦU]
+        payload = {
+            "challenger": challenger,  # <--- Server bắt buộc dùng từ này
+            "target": target,          # <--- Server bắt buộc dùng từ này
             "room_id": room_id,
             "game_type": game_type,
-        }, timeout=2)
-    except: pass
+        }
+        
+        # Gửi đi
+        r = session.post(url, json=payload, timeout=2)
+        
+        if r.status_code == 200:
+            return True
+        else:
+            # In lỗi ra để debug nếu có
+            print(f"❌ Server báo lỗi: {r.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Lỗi gửi mời: {e}")
+        return False
 
 def check_invite_online(username: str):
     # [FIX LỖI QUAN TRỌNG] Mã hóa tên username (VD: "Player 1" -> "Player%201")
