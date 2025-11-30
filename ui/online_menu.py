@@ -630,6 +630,18 @@ class OnlineMenu:
     # ==========================================
 
     def update_user_list_ui(self, users, invite=None):
+        # [QUAN TRỌNG: ƯU TIÊN SỐ 1] 
+        # Kiểm tra lời mời NGAY LẬP TỨC, bất kể đang ở màn hình nào
+        if invite:
+            print(f">>> CÓ LỜI MỜI: {invite}")
+            self._handle_incoming_invite(invite)
+
+        # [ƯU TIÊN SỐ 2] Kiểm tra bảng danh sách bạn bè
+        # Nếu bảng này đang đóng thì DỪNG LẠI, không vẽ vời gì nữa (để tránh lỗi hiện nút ma)
+        if not hasattr(self, 'invite_panel') or self.invite_panel is None:
+            return
+        if not hasattr(self, 'friend_scroll_container') or self.friend_scroll_container is None:
+            return
         # [THÊM ĐOẠN NÀY VÀO ĐẦU HÀM]
         # Nếu bảng mời (invite_panel) đã bị xóa, hoặc container không còn -> DỪNG NGAY
         if not hasattr(self, 'invite_panel') or self.invite_panel is None:
@@ -708,6 +720,11 @@ class OnlineMenu:
             self.friend_scroll_container.set_scrollable_area_dimensions((container_w, y))
 
         if invite: self._handle_incoming_invite(invite)
+        # [QUAN TRỌNG] Kiểm tra xem có lời mời không
+        # Thêm dòng print này để DEBUG xem có nhận được gì không
+        if invite:
+            print(">>> CÓ LỜI MỜI TỚI: ", invite)
+            self._handle_incoming_invite(invite)
 
     def _handle_incoming_invite(self, invite):
         # Chỉ hiện nếu chưa có hộp thoại nào
@@ -801,7 +818,16 @@ class OnlineMenu:
         print(text) # Vẫn in ra console để debug
 
     def _thread_send_invite(self, target_name):
-        web_matchmaking.send_invite_online(self.network_manager.username, target_name, self.host_room_id, self.current_game_type)
+        success = web_matchmaking.send_invite_online(self.network_manager.username, target_name, self.host_room_id, self.current_game_type)
+        # Cập nhật giao diện dựa trên kết quả
+        if success:
+            print(f"[NET] Đã gửi mời thành công tới {target_name}")
+            if hasattr(self, 'lbl_lobby_status'):
+                self.lbl_lobby_status.set_text(f"✔ Đã gửi tới {target_name}")
+        else:
+            print(f"[NET] Gửi thất bại tới {target_name}")
+            if hasattr(self, 'lbl_lobby_status'):
+                self.lbl_lobby_status.set_text(f"❌ Lỗi gửi tới {target_name}!")
  
     def reset_ui_state(self):
         """Xóa trạng thái phòng cũ, đưa về màn hình Dashboard"""
