@@ -84,8 +84,25 @@ class OnlineMenu:
         self.window.hide()
 
     def show(self):
+        is_network_alive = False
+        if self.network_manager:
+            is_network_alive = (self.network_manager._listen_socket is not None) or \
+                               (self.network_manager.p2p_socket is not None)
+
+        # 2. Nếu biến "Đã đăng nhập" là True, nhưng Mạng lại chết (False)
+        # -> Nghĩa là phiên chơi cũ đã kết thúc. BẮT BUỘC ĐĂNG XUẤT.
+        if self.is_logged_in and not is_network_alive:
+            print("[UI] Phát hiện phiên chơi cũ đã ngắt -> Reset về Đăng Nhập.")
+            
+            # Reset trạng thái đăng nhập
+            self.is_logged_in = False 
+            
+            # Đưa giao diện về màn hình nhập tên
+            self.setup_login_view()
         self.window.show()
-        if self.is_logged_in:
+        if self.is_logged_in and is_network_alive:
+            print("[UI] Khôi phục polling danh sách...")
+            self.network_manager.force_update()
             self.network_manager.start_polling_users(self.update_user_list_ui)
 
     def hide(self):
@@ -95,38 +112,48 @@ class OnlineMenu:
         if self.invite_list_window: self.invite_list_window.kill()
 
     def clear_ui(self):
-        """Xóa sạch giao diện cũ"""
-        # 1. Xóa các UI chính (Nút, Label, Ảnh nền...)
+        """Xóa sạch giao diện cũ và KILL toàn bộ các bảng pop-up tồn đọng"""
+        print("--- Đang dọn dẹp UI ---")
+        
+        # 1. Xóa các UI chính trong danh sách quản lý
         for element in self.ui_elements:
             element.kill()
-        self.ui_elements = []
+        self.ui_elements.clear()
 
-        # 2. [QUAN TRỌNG] Xóa danh sách bạn bè/người chơi (Đây là cái đang bị lỗi)
+        # 2. Xóa danh sách bạn bè (nếu có)
         if hasattr(self, 'friend_items'):
             for item in self.friend_items:
                 item.kill()
             self.friend_items.clear()
 
-        # 3. Xóa container chứa danh sách (nếu có)
+        # 3. [QUAN TRỌNG] Xóa container cuộn (Scroll Container)
         if hasattr(self, 'friend_scroll_container') and self.friend_scroll_container:
             self.friend_scroll_container.kill()
             self.friend_scroll_container = None
 
-        # 4. Xóa bảng mời (nếu đang mở)
+        # 4. [QUAN TRỌNG] Xóa bảng mời (Invite Panel)
         if hasattr(self, 'invite_panel') and self.invite_panel:
             self.invite_panel.kill()
             self.invite_panel = None
 
-        # 5. Xóa cửa sổ danh sách mời (loại window)
+        # 5. [QUAN TRỌNG] Xóa cửa sổ danh sách mời
         if self.invite_list_window:
             self.invite_list_window.kill()
             self.invite_list_window = None
 
-        # 6. Xóa bảng Loading (nếu đang xoay)
+        # 6. [CỰC KỲ QUAN TRỌNG] Xóa bảng Loading (Thủ phạm chính hay che nút)
         if hasattr(self, 'loading_panel') and self.loading_panel:
             self.loading_panel.kill()
             self.loading_panel = None
             self.loading_state = "IDLE"
+            
+        # 7. Xóa bảng xác nhận lời mời (Invite Dialog)
+        if self.invite_dialog:
+            self.invite_dialog.kill()
+            self.invite_dialog = None
+
+        # 8. Reset các biến trạng thái cờ
+        self.pending_room_id = None
     # ============================================================
     # [THÊM HÌNH NỀN] 2. HÀM TRỢ GIÚP THÊM NỀN VÀO CỬA SỔ
     # ============================================================
@@ -236,15 +263,44 @@ class OnlineMenu:
     # 1. MENU CHÍNH (DASHBOARD)
     # ==========================================
     def setup_main_view(self):
+        # ====================================================
+        # 1. RESET MẠNG (ĐỂ NGẮT P2P CŨ)
+        # ====================================================
+        print("[SYSTEM] Về sảnh chính -> Reset mạng...")
+        
+        # Dừng polling cũ trước
+        if self.network_manager:
+            self.network_manager.stop_polling_users()
+            self.network_manager.reset_connection()
+
+        # ====================================================
+        # 2. [QUAN TRỌNG] MỞ LẠI CỔNG ĐỂ HIỆN TÊN TRÊN DANH SÁCH
+        # ====================================================
+        # Nếu đã đăng nhập, ta phải mở cổng ngay (dù chưa tạo phòng) 
+        # để người khác thấy mình mà mời.
+        if self.is_logged_in:
+            print("[SYSTEM] Đang mở lại cổng chờ tin hiệu...")
+            # Mở cổng lắng nghe (nhưng chưa vào trạng thái Host game)
+            self.network_manager.start_hosting_phase()
+            
+            # Bắt đầu gửi tín hiệu lên Server để báo "Tôi đang Online"
+            self.network_manager.start_polling_users(self.update_user_list_ui)
+
+        # ====================================================
+        # 3. DỌN DẸP UI
+        # ====================================================
         self.clear_ui()
-        self._add_common_background() # Thêm hình nền gỗ tối
-
+        self.host_room_id = None
+        self.pending_room_id = None
+        
+        # ====================================================
+        # 4. VẼ GIAO DIỆN
+        # ====================================================
         self.current_view = "MAIN"
-        # Ẩn thanh tiêu đề cửa sổ đi cho đẹp (hoặc để cũng được)
-        self.window.set_display_title(f"Sảnh Chính")
+        self._add_common_background()
+        self.window.set_display_title(f"Sảnh Chính - {self.network_manager.username}")
 
-        # --- A. HEADER (Dòng chào mừng) ---
-        # Tận dụng lại ảnh 'id_input_bg.png' làm nền cho tiêu đề
+        # --- A. HEADER ---
         header_rect = pygame.Rect((0, 0), (400, 60))
         header_rect.centerx = 400 
         header_rect.y = 50       
@@ -253,59 +309,51 @@ class OnlineMenu:
             banner_img = pygame.image.load('ui/assets/images/id_input_bg.png').convert_alpha()
             banner_img = pygame.transform.smoothscale(banner_img, (400, 60))
             UIImage(relative_rect=header_rect, image_surface=banner_img, manager=self.ui_manager, container=self.window)
-        except: pass # Không có ảnh thì thôi
+        except: pass 
         
-        lbl_welcome = UILabel(
+        UILabel(
             relative_rect=header_rect, 
-            text=f"Xin chào chủ tướng, {self.network_manager.username}!", 
+            text=f"Xin chào, {self.network_manager.username}!", 
             manager=self.ui_manager, 
             container=self.window,
             object_id=ObjectID(object_id="#lbl_gold_text")
         )
-        self.ui_elements.append(lbl_welcome)
 
-        # --- B. HAI THẺ BÀI LỚN (CARDS) ---
-        # Tính toán vị trí cho cân đối
+        # --- B. HAI NÚT LỚN (Cards) ---
         card_w, card_h = 240, 300
         gap = 60
         start_y = 140
         left_x = (800 - (card_w * 2 + gap)) // 2 
         
-        rect_create = pygame.Rect((left_x, start_y), (card_w, card_h))
-        rect_join = pygame.Rect((left_x + card_w + gap, start_y), (card_w, card_h))
-
-        # [THẺ 1] TẠO PHÒNG
         self.btn_create_main = self._create_card_button(
-            rect=rect_create,
+            rect=pygame.Rect((left_x, start_y), (card_w, card_h)),
             title="TẠO PHÒNG",
-            sub_text="Làm chủ phòng đấu & Mời bạn bè",
-            color_fallback=(100, 50, 50, 200), # Màu đỏ nâu dự phòng
-            image_path='ui/assets/images/card_create_bg.png', # <--- Tên file ảnh bạn tìm
+            sub_text="Làm chủ phòng đấu",
+            color_fallback=(100, 50, 50, 200),
+            image_path='ui/assets/images/card_create_bg.png',
             action_id="#transparent_btn_large"
         )
 
-        # [THẺ 2] NHẬP ID
         self.btn_join_main = self._create_card_button(
-            rect=rect_join,
+            rect=pygame.Rect((left_x + card_w + gap, start_y), (card_w, card_h)),
             title="NHẬP ID",
-            sub_text="Tham chiến vào phòng có sẵn",
-            color_fallback=(50, 70, 100, 200), # Màu xanh dương dự phòng
-            image_path='ui/assets/images/card_join_bg.png', # <--- Tên file ảnh bạn tìm
+            sub_text="Vào phòng có sẵn",
+            color_fallback=(50, 70, 100, 200),
+            image_path='ui/assets/images/card_join_bg.png',
             action_id="#transparent_btn_large"
         )
         
         self.ui_elements.extend([self.btn_create_main, self.btn_join_main])
 
         # --- C. NÚT ĐĂNG XUẤT ---
-        # Đặt thấp xuống một chút cho thoáng
         self.btn_logout = UIButton(
             relative_rect=pygame.Rect((30, 480), (120, 40)), 
             text="< Đăng xuất", 
             manager=self.ui_manager, 
-            container=self.window
+            container=self.window,
+            object_id=ObjectID(object_id="#wood_btn")
         )
         self.ui_elements.append(self.btn_logout)
-
     # ==========================================
     # 2. NHẬP ID
     # ==========================================
@@ -668,7 +716,24 @@ class OnlineMenu:
             # --- LOBBY VIEW ---
             elif self.current_view == "LOBBY":
                 if event.ui_element == self.btn_cancel_host:
+                    print("[UI] Người chơi rời Lobby...")
+                    
+                    # 1. [QUAN TRỌNG] Reset mạng BẤT KỂ là Host hay Guest
+                    # Việc này sẽ kích hoạt hàm shutdown() ta vừa viết ở trên
+                    self.network_manager.reset_connection()
+                    
+                    # 2. Nếu là Host thì gửi thêm lệnh xóa phòng lên Server (Option)
+                    if self.host_room_id:
+                        # (Code báo server hủy phòng nếu cần)
+                        pass 
+
+                    # 3. Xóa các biến trạng thái
+                    self.host_room_id = None 
+                    self.pending_room_id = None # Xóa luôn ID phòng đang chờ
+                    
+                    # 4. Quay về màn hình chính
                     self.setup_main_view()
+                
                 elif event.ui_element == self.btn_copy:
                     try: pygame.scrap.put(pygame.SCRAP_TEXT, str(self.host_room_id).encode()); self.lbl_lobby_status.set_text("")
                     except: self.lbl_lobby_status.set_text("Lỗi copy clipboard!")
@@ -828,54 +893,58 @@ class OnlineMenu:
         self.current_view = "SWITCH_TO_MAIN"
 
     # [SỬA LẠI] Hàm _thread_create
+    # [SỬA LẠI HOÀN TOÀN HÀM NÀY]
     def _thread_create(self):
-        self.loading_state = "LOADING" # Bắt đầu xoay
+        self.loading_state = "LOADING"
         
-        # Reset kết nối
-        self.update_loading_text("[NET] Đang dọn dẹp mạng...")
+        # 1. Cưỡng chế ngắt mọi kết nối cũ
+        self.update_loading_text("Đang làm sạch kết nối...")
         self.network_manager.reset_connection()
+        import time
+        time.sleep(0.5) # Nghỉ một chút để hệ điều hành kịp đóng Port cũ
         
+        # 2. Bắt đầu mở Port Host
+        self.update_loading_text("Đang mở cổng mạng...")
         port = self.network_manager.start_hosting_phase()
-        if port == 0:
+        
+        # Nếu mở thất bại (thường trả về 0 hoặc None), thử lại 1 lần nữa
+        if not port or port == 0:
+            self.update_loading_text("Cổng bận, đang thử lại...")
+            time.sleep(1)
+            self.network_manager.reset_connection() # Reset lần nữa
+            port = self.network_manager.start_hosting_phase()
+
+        # 3. Kiểm tra kết quả mở Port
+        if not port or port == 0:
             self.loading_state = "FAIL"
-            self.update_loading_text("Lỗi: Không mở được Port!")
+            self.update_loading_text("Lỗi: Không thể mở Port (Mạng bận)!")
+            # Hiện nút thử lại để người chơi bấm lại
+            if hasattr(self, 'btn_retry'): self.btn_retry.show()
             return
 
+        # 4. Đăng ký phòng lên Web Server
         self.update_loading_text(f"Đang tạo phòng (Port {port})...")
-        
         rid = None
         for i in range(3):
-            # Cập nhật text báo thử lại
-            if i > 0:
-                self.update_loading_text(f"Thử lại lần {i+1}...")
-                
             rid = web_matchmaking.create_room_online(
                 self.network_manager.username, 
                 port, 
                 self.current_game_type
             )
-            
-            if rid:
-                break
-            else:
-                import time
-                time.sleep(1) # Nghỉ 1 chút
+            if rid: break
+            time.sleep(1)
         
         if rid:
-            # --- THÀNH CÔNG ---
             self.loading_state = "SUCCESS"
-            self.update_loading_text("TẠO PHÒNG THÀNH CÔNG!")
-            import time
-            time.sleep(1.5) # Để người dùng kịp đọc chữ "Thành công"
-            
+            self.update_loading_text(f"Tạo phòng {rid} thành công!")
+            time.sleep(1)
             self.host_room_id = rid
-            self.current_view = "SWITCH_TO_LOBBY" # Chuyển màn hình
-            self.loading_state = "IDLE" # Reset trạng thái
+            self.current_view = "SWITCH_TO_LOBBY"
+            self.loading_state = "IDLE"
         else:
-            # --- THẤT BẠI ---
             self.loading_state = "FAIL"
             self.update_loading_text("Lỗi: Server không phản hồi.")
-
+            if hasattr(self, 'btn_retry'): self.btn_retry.show()
     # Hàm phụ để update text an toàn từ thread
     def update_loading_text(self, text):
         # Lưu ý: Pygame GUI không an toàn tuyệt đối với Thread, 

@@ -190,18 +190,24 @@ class BoardUI:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE: 
                 print(">>> ĐÃ BẤM ESC! <<<")
+                
                 # [THÊM ĐOẠN NÀY]
                 # Nếu đang chơi Online, gửi lời trăn trối trước khi đi
                 if self.network_manager:
+                    # 1. Gửi lời trăn trối cho đối thủ
                     try:
-                        self.network_manager.send_data({"type": "quit"})
+                        # [SỬA] Dùng hàm send_to_p2p (send_data không tồn tại)
+                        self.network_manager.send_to_p2p({"type": "quit"})
                         
-                        # [THÊM QUAN TRỌNG] Đợi 0.1 giây để tin nhắn kịp bay đi
                         import time
-                        time.sleep(0.1) 
+                        time.sleep(0.1) # Đợi tin nhắn bay đi
                     except: pass
                 
-                # Sau đó mới thực hiện lệnh thoát game của mình
+                    # 2. [QUAN TRỌNG NHẤT] Cắt mạng ngay lập tức tại đây
+                    # Việc này sẽ làm biến p2p_socket = None. 
+                    # Khi quay lại Menu, Menu thấy None sẽ tự động reset về trang chủ.
+                    self.network_manager.reset_connection()
+                
                 return 'QUIT_GAME'
         self.ui_manager.process_events(event)
 
