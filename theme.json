@@ -591,6 +591,15 @@
             "corner_radius": "5",
             "border_width": "1"
         }
+    },"#diff_title": {
+        "font": {
+            "name": "Arial",
+            "size": "24",
+            "bold": "1"
+        },
+        "colours": {
+            "normal_text": "#FFFFFF"
+        }
     }
 
 }
