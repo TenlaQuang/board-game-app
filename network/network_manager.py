@@ -130,7 +130,7 @@ class NetworkManager:
         try:
             while self.p2p_socket:
                 try:
-                    data = self.p2p_socket.recv(1024).decode('utf-8')
+                    data = self.p2p_socket.recv(40960).decode('utf-8')
                     if not data: 
                         print("[NET] Đối thủ đã ngắt kết nối.")
                         break

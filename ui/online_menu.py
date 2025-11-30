@@ -33,6 +33,9 @@ class OnlineMenu:
         self.is_logged_in = False 
         self.invited_users = set() # Tập hợp chứa tên những người đã mời
         self.invite_cooldowns = {}
+        
+        # [THÊM] Biến lưu thời điểm bấm nút Refresh lần cuối
+        self.last_refresh_time = 0
 
         # Container chính
         # Kích thước cửa sổ là 800x600
@@ -424,25 +427,18 @@ class OnlineMenu:
             object_id=ObjectID(object_id="#lbl_xiangqi_text")
         )
 
-        # ==========================================================
-        # [THÊM MỚI] 5. Tạo hình nền cho danh sách (bg_invite.png)
-        # ==========================================================
-        
-        # Xác định vị trí và kích thước chung cho cả Ảnh nền và List
+        # 5. Tạo hình nền cho danh sách (bg_list.jpg)
         list_rect = pygame.Rect((30, 70), (panel_w - 60, panel_h - 160))
 
         try:
-            # Load ảnh bg_invite.png
             # LƯU Ý: Đảm bảo file ảnh nằm đúng thư mục này
             bg_list_surf = pygame.image.load('ui/assets/images/bg_list.jpg').convert_alpha()
-            # Co giãn ảnh cho vừa khít với khung danh sách
             bg_list_surf = pygame.transform.scale(bg_list_surf, (list_rect.width, list_rect.height))
         except FileNotFoundError:
-            print("Lỗi: Không tìm thấy bg_invite.png, dùng nền màu tạm.")
+            print("Lỗi: Không tìm thấy bg_list.jpg, dùng nền màu tạm.")
             bg_list_surf = pygame.Surface((list_rect.width, list_rect.height))
-            bg_list_surf.fill((100, 80, 50)) # Màu nâu nếu lỗi ảnh
+            bg_list_surf.fill((100, 80, 50))
 
-        # Đặt tấm ảnh nền vào Panel
         UIImage(
             relative_rect=list_rect,
             image_surface=bg_list_surf,
@@ -452,23 +448,66 @@ class OnlineMenu:
 
         # 6. Tạo Danh Sách (Đè lên trên tấm ảnh vừa tạo)
         self.friend_scroll_container = UIScrollingContainer(
-            relative_rect=list_rect, # Dùng lại vị trí bạn đã tính
+            relative_rect=list_rect,
             manager=self.ui_manager,
             container=self.invite_panel,
             object_id=ObjectID(object_id="#transparent_list")
         )
-        self.friend_buttons = [] # Tạo cái list để quản lý mấy cái nút tên
-        # ==========================================================
+        self.friend_buttons = [] 
 
+        # --- NÚT GỬI & NÚT REFRESH ---
+        btn_send_x = (panel_w // 2) - 100
+        btn_send_y = panel_h - 80
+        
         # 7. Nút Gửi
         self.btn_send_invite_action = UIButton(
-            relative_rect=pygame.Rect((panel_w//2 - 100, panel_h - 80), (200, 50)), 
+            relative_rect=pygame.Rect((btn_send_x, btn_send_y), (200, 50)), 
             text="Gửi Lời Mời", 
             manager=self.ui_manager, 
             container=self.invite_panel,
             object_id=ObjectID(object_id="#wood_btn")
         )
         
+        # --- [THÊM MỚI] NÚT REFRESH (HÌNH XOAY) ---
+        btn_refresh_x = btn_send_x + 200 + 10 
+        btn_refresh_y = btn_send_y + 5 
+        
+        # Tải ảnh refresh
+        try:
+            refresh_img = pygame.image.load('ui/assets/images/refresh.svg').convert_alpha()
+            refresh_img = pygame.transform.smoothscale(refresh_img, (30, 30)) 
+        except:
+            refresh_img = pygame.Surface((30, 30))
+            refresh_img.fill((255, 200, 0))
+
+        # Tạo nút hình ảnh (Không có chữ)
+        self.btn_refresh = UIButton(
+            relative_rect=pygame.Rect((btn_refresh_x, btn_refresh_y), (40, 40)),
+            text="", 
+            manager=self.ui_manager,
+            container=self.invite_panel,
+            object_id=ObjectID(object_id="#wood_btn") 
+        )
+        
+        # [SỬA LỖI VALUE ERROR TẠI ĐÂY]
+        # Thay vì container=self.btn_refresh (SAI), ta dùng container=self.invite_panel (ĐÚNG)
+        # Và tính lại toạ độ tương đối so với Panel
+        
+        icon_x = btn_refresh_x + 5 # Cách lề trái nút 5px
+        icon_y = btn_refresh_y + 5 # Cách lề trên nút 5px
+        
+        icon_refresh = UIImage(
+            relative_rect=pygame.Rect((icon_x, icon_y), (30, 30)),
+            image_surface=refresh_img,
+            manager=self.ui_manager,
+            container=self.invite_panel # <--- SỬA THÀNH invite_panel
+        )
+        
+        # Vô hiệu hóa icon để click xuyên qua được (bấm vào icon vẫn ăn nút ở dưới)
+        try: self.icon_refresh.disable()
+        except: pass
+        # --------------------------------
+
         # 8. Nút Đóng (X)
         self.btn_close_invite = UIButton(
             relative_rect=pygame.Rect((panel_w - 40, 10), (30, 30)),
@@ -511,6 +550,34 @@ class OnlineMenu:
                     threading.Thread(target=self._thread_join, args=(self.pending_room_id,), daemon=True).start()
 
         if event.type == pygame_gui.UI_BUTTON_PRESSED:
+            # Xử lý nút Refresh
+            if hasattr(self, 'btn_refresh') and event.ui_element == self.btn_refresh:
+                # Kiểm tra thời gian (Vẫn giữ để an toàn)
+                current_time = time.time()
+                if current_time - self.last_refresh_time < 5:
+                    return 
+
+                print("[UI] Đang làm mới danh sách...")
+                self.last_refresh_time = current_time
+                
+                # [SỬA ĐOẠN NÀY] 
+                # 1. Khóa nút
+                self.btn_refresh.disable()
+                
+                # 2. Ẩn icon mũi tên đi
+                if hasattr(self, 'icon_refresh'):
+                    self.icon_refresh.hide()
+                
+                # 3. Set chữ số 5 lên nút
+                self.btn_refresh.set_text("5")
+                
+                # 4. Xóa danh sách và gọi mạng (giữ nguyên)
+                if hasattr(self, 'friend_items'):
+                    for item in self.friend_items: item.kill()
+                    self.friend_items.clear()
+                
+                self.network_manager.force_update()
+                return
             if hasattr(self, 'friend_items'):
                 for btn in self.friend_items:
                     # Nếu cái nút vừa bấm (event.ui_element) là một trong các nút bạn bè
@@ -975,6 +1042,31 @@ class OnlineMenu:
                             del self.invite_cooldowns[name]
                             btn.set_text(name) # Trả lại tên gốc
                             btn.enable()       # Cho phép bấm lại
+        # [SỬA LẠI ĐOẠN CHECK REFRESH]
+        if hasattr(self, 'btn_refresh') and self.btn_refresh is not None:
+            # Nếu nút đang bị khóa (đang trong thời gian chờ)
+            if not self.btn_refresh.is_enabled:
+                time_passed = time.time() - self.last_refresh_time
+                remaining = 5 - time_passed
+                
+                if remaining > 0:
+                    # Cập nhật số giây đếm ngược (Làm tròn số)
+                    # Dùng int(remaining) + 1 để nó hiện 5, 4, 3, 2, 1 (thay vì 4, 3... 0)
+                    display_text = str(int(remaining) + 1)
+                    
+                    # Chỉ set text nếu có thay đổi (để tối ưu hiệu năng)
+                    if self.btn_refresh.text != display_text:
+                        self.btn_refresh.set_text(display_text)
+                else:
+                    # Hết giờ -> Mở khóa
+                    self.btn_refresh.enable()
+                    self.btn_refresh.set_text("") # Xóa số đi
+                    
+                    # Hiện lại cái icon mũi tên xoay
+                    if hasattr(self, 'icon_refresh'):
+                        self.icon_refresh.show()
+                    
+                    print("[UI] Nút Refresh đã sẵn sàng.")
     # Thêm hàm này vào class OnlineMenu
     def close_invite_popup(self):
         """Hàm chuyên dùng để tắt sạch sẽ bảng mời"""

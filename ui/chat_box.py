@@ -2,18 +2,29 @@ import pygame
 import time
 import os
 import math
+import shutil # Để xóa file tạm
 from utils.constants import WHITE, BLACK, RED, BLUE
+
+# [MỚI] Import bộ quản lý âm thanh
+try:
+    from utils.audio_manager import AudioManager
+except ImportError:
+    print("Chưa có file utils/audio_manager.py hoặc chưa cài thư viện sounddevice")
+    AudioManager = None
 
 class GameSidebar:
     def __init__(self, x, y, w, h, font):
         self.rect = pygame.Rect(x, y, w, h)
         self.font = font
         
+        # --- AUDIO MANAGER ---
+        self.audio_mgr = AudioManager() if AudioManager else None
+        self.voice_cache = {} # Lưu đường dẫn file âm thanh: {msg_content: filepath}
+
         # --- CHAT COMPONENT ---
         self.messages = []
         self.input_text = ""
         self.input_active = False
-        
         self.history_rect = pygame.Rect(x + 10, y + 80, w - 20, h - 220)
         
         # Input Area
@@ -26,10 +37,8 @@ class GameSidebar:
         self.show_emoji_panel = False
         self.emoji_images = [] 
         self.emoji_count = 33 
-        
         base_path = os.path.dirname(os.path.abspath(__file__))
         emoji_dir = os.path.join(base_path, "assets", "emojis")
-
         for i in range(1, self.emoji_count + 1):
             try:
                 img = None
@@ -44,22 +53,21 @@ class GameSidebar:
                 self.emoji_images.append(img)
             except: pass
 
-        # [MỚI] TẠO ICON CHO NÚT EMOJI
-        # Lấy hình đầu tiên (1.gif) làm icon cho nút bấm. Nếu không có thì tạo ô màu vàng.
-        if self.emoji_images:
-            self.icon_btn_emoji = self.emoji_images[6] # Lấy hình mặt cười số 1
-        else:
-            self.icon_btn_emoji = pygame.Surface((24,24))
-            self.icon_btn_emoji.fill((255, 200, 0))
+        if self.emoji_images: self.icon_btn_emoji = self.emoji_images[0]
+        else: self.icon_btn_emoji = pygame.Surface((24,24)); self.icon_btn_emoji.fill((255, 200, 0))
+        
+        # [THÊM] Khởi tạo module âm thanh của Pygame
+        if not pygame.mixer.get_init():
+            try:
+                pygame.mixer.init()
+            except: pass
 
-        # Tính toán Grid Emoji
+        # Grid Emoji
         icon_size = 35; padding = 5
         cols = max(1, (w - 20) // (icon_size + padding))
         rows = math.ceil(len(self.emoji_images) / cols)
-        panel_h = min(rows * (icon_size + padding) + padding, 300) # Giới hạn chiều cao max 300px
-        
+        panel_h = min(rows * (icon_size + padding) + padding, 300)
         self.emoji_panel_rect = pygame.Rect(x + 10, self.input_rect.y - panel_h - 5, w - 20, panel_h)
-        
         self.emoji_rects = []
         if self.emoji_images:
             for i in range(len(self.emoji_images)):
@@ -68,18 +76,16 @@ class GameSidebar:
                 rect_y = self.emoji_panel_rect.y + padding + r * (icon_size + padding)
                 self.emoji_rects.append(pygame.Rect(rect_x, rect_y, icon_size, icon_size))
 
-        # Voice
+        # Voice State
         self.is_recording = False
         self.record_start_time = 0
         self.voice_play_buttons = [] 
 
-        # Buttons
+        # Buttons & Popup
         btn_y = self.input_rect.bottom + 20
         btn_w = (w - 30) // 2
         self.btn_draw = pygame.Rect(x + 10, btn_y, btn_w, 40)     
         self.btn_resign = pygame.Rect(self.btn_draw.right + 10, btn_y, btn_w, 40) 
-
-        # Popup
         self.popup_type = None 
         self.popup_rect = pygame.Rect(x + 10, y + 200, w - 20, 130)
         pw = (self.popup_rect.width - 30) // 2; py = self.popup_rect.bottom - 40
@@ -89,27 +95,79 @@ class GameSidebar:
     def handle_event(self, e, network_manager=None):
         action = None
 
-        # Voice Press/Release
+        # --- [QUAN TRỌNG] XỬ LÝ THU ÂM THẬT ---
         if e.type == pygame.MOUSEBUTTONDOWN:
             if self.btn_mic.collidepoint(e.pos):
-                self.is_recording = True; self.record_start_time = time.time(); return None
+                if self.audio_mgr:
+                    self.is_recording = True
+                    self.record_start_time = time.time()
+                    print(">> Bắt đầu thu âm...")
+                    self.audio_mgr.start_recording()
+                else:
+                    print(">> Lỗi: Chưa cài thư viện âm thanh!")
+                return None
+
         elif e.type == pygame.MOUSEBUTTONUP:
             if self.is_recording:
                 self.is_recording = False
                 duration = time.time() - self.record_start_time
-                if duration > 0.5:
-                    msg = f"[Voice:{duration:.1f}s]" 
-                    self.add_message("Bạn", msg)
-                    if network_manager: network_manager.send_chat(msg)
+                print(f">> Dừng thu âm. ({duration:.1f}s)")
+                
+                if duration > 0.5 and self.audio_mgr:
+                    # 1. Lưu file wav vào máy mình
+                    filename = f"voice_sent_{int(time.time())}.wav"
+                    path = self.audio_mgr.stop_recording(filename)
+                    
+                    # 2. Mã hóa thành chuỗi để gửi
+                    b64_data = self.audio_mgr.audio_to_string(path)
+                    
+                    # 3. Tạo tin nhắn protocol: [VOICE:<giây>:<dữ_liệu_base64>]
+                    # Lưu ý: Dữ liệu này rất dài, nhưng socket vẫn gửi được
+                    full_msg = f"[VOICE:{duration:.1f}:{b64_data}]"
+                    
+                    # 4. Hiển thị phía mình (Lưu cache để play lại)
+                    self.voice_cache[full_msg] = path 
+                    self.add_message("Bạn", full_msg) # Add tin nhắn dài vào list
+                    
+                    # 5. Gửi qua mạng
+                    if network_manager: network_manager.send_chat(full_msg)
+                
                 return None
 
         if e.type == pygame.MOUSEBUTTONDOWN:
-            # Play Voice
-            for btn_rect, voice_msg in self.voice_play_buttons:
+            # --- [QUAN TRỌNG] XỬ LÝ NGHE (PLAY) ---
+            for btn_rect, full_msg_content in self.voice_play_buttons:
                 if btn_rect.collidepoint(e.pos):
-                    print(f">> [LOA] Playing: {voice_msg}"); return None
+                    print(f">> [LOA] Đang phát âm thanh...")
+                    
+                    # Kiểm tra xem file đã có trong cache chưa (đã tải chưa)
+                    if full_msg_content in self.voice_cache:
+                        path = self.voice_cache[full_msg_content]
+                        if os.path.exists(path):
+                            self.audio_mgr.play_sound(path)
+                        else:
+                            print("File âm thanh không tồn tại!")
+                    else:
+                        print("Đang giải mã âm thanh...")
+                        # Nếu là tin nhắn nhận được, cần giải mã Base64 ra file
+                        try:
+                            # Cấu trúc: [VOICE:1.5:ABC...]
+                            parts = full_msg_content.split(":") 
+                            # parts[0] = [VOICE, parts[1] = 1.5, parts[2] = ABC...]
+                            b64_str = parts[2][:-1] # Bỏ dấu ] cuối
+                            
+                            filename = f"voice_recv_{int(time.time())}_{len(b64_str)}.wav"
+                            path = self.audio_mgr.string_to_audio(b64_str, filename)
+                            
+                            # Lưu vào cache để lần sau bấm không cần giải mã lại
+                            self.voice_cache[full_msg_content] = path
+                            self.audio_mgr.play_sound(path)
+                        except Exception as ex:
+                            print(f"Lỗi giải mã voice: {ex}")
 
-            # Popup
+                    return None
+
+            # ... (Các phần xử lý Popup, Emoji, Button khác GIỮ NGUYÊN) ...
             if self.popup_type:
                 if self.btn_p_yes.collidepoint(e.pos):
                     if self.popup_type == 'RESIGN_CONFIRM':
@@ -127,7 +185,6 @@ class GameSidebar:
                     self.popup_type = None; return None
                 return None
 
-            # Emoji Button & Panel
             if self.btn_emoji.collidepoint(e.pos):
                 self.show_emoji_panel = not self.show_emoji_panel; return None
 
@@ -139,7 +196,6 @@ class GameSidebar:
                         if network_manager: network_manager.send_chat(code)
                         self.show_emoji_panel = False; return None
 
-            # Input & Game Buttons
             if self.input_rect.collidepoint(e.pos): self.input_active = True; self.show_emoji_panel = False
             else: self.input_active = False
             
@@ -168,94 +224,66 @@ class GameSidebar:
         if len(self.messages) > 20: self.messages.pop(0)
 
     def draw(self, surface, game_logic):
-        # Tắt popup nếu game kết thúc
-        if game_logic.game_over:
-            self.popup_type = None
+        if game_logic.game_over: self.popup_type = None
 
-        # 1. Vẽ nền Sidebar
+        # Nền
         pygame.draw.rect(surface, (30, 30, 35), self.rect)
         pygame.draw.line(surface, (100, 100, 100), (self.rect.x, self.rect.y), (self.rect.x, self.rect.bottom), 2)
 
-        # 2. [ĐÃ KHÔI PHỤC] HIỂN THỊ TRẠNG THÁI (LƯỢT AI)
+        # Status
         current_turn = game_logic.current_turn
         my_color = getattr(game_logic, 'my_color', None)
-        
         status_text = ""
         text_color = WHITE
         
-        # A. Nếu Game đã kết thúc
         if game_logic.winner:
-            if game_logic.winner == "draw":
-                status_text = "VÁN ĐẤU HÒA!"
-                text_color = (200, 200, 200)
-            elif my_color and game_logic.winner == my_color:
-                status_text = "🎉 BẠN THẮNG! 🎉"
-                text_color = (255, 215, 0) # Màu vàng Gold
-            elif my_color and game_logic.winner != my_color:
-                status_text = "💀 BẠN THUA!"
-                text_color = (255, 50, 50) # Màu đỏ
-            else:
-                # Trường hợp chơi Offline hoặc xem
-                w_name = "TRẮNG/ĐỎ" if game_logic.winner == 'white' else "ĐEN"
-                status_text = f"{w_name} THẮNG!"
-                text_color = (255, 215, 0)
-
-        # B. Nếu Game đang chạy
+            w_text = "HÒA!" if game_logic.winner == "draw" else f"{game_logic.winner.upper()} THẮNG"
+            status_text = f"KẾT THÚC: {w_text}"
+            text_color = (255, 215, 0)
         else:
             turn_vn = "TRẮNG/ĐỎ" if current_turn == 'white' else "ĐEN"
-            
             if my_color:
                 if current_turn == my_color:
-                    # --- LƯỢT MÌNH ---
                     status_text = f"LƯỢT CỦA BẠN"
-                    text_color = (100, 255, 100) # Chữ xanh lá nhạt
+                    text_color = (100, 255, 100)
                 else:
-                    # --- LƯỢT ĐỐI THỦ ---
                     status_text = f"Lượt Đối Thủ"
-                    text_color = (255, 100, 100) # Chữ đỏ nhạt  
+                    text_color = (255, 100, 100)
             else:
-                # Chơi Offline (2 người trên 1 máy)
                 status_text = f"Lượt: {turn_vn}"
                 text_color = WHITE
 
-        # Vẽ chữ trạng thái (Có xử lý lỗi font)
-        try:
-            txt_surf = self.font.render(status_text, True, text_color)
-        except:
-            # Fallback nếu font lỗi
-            font_big = pygame.font.SysFont("Arial", 25, bold=True)
-            txt_surf = font_big.render(status_text, True, text_color)
-            
-        # Căn giữa chữ trạng thái trong Sidebar
+        try: txt_surf = self.font.render(status_text, True, text_color)
+        except: txt_surf = pygame.font.SysFont("Arial", 25, bold=True).render(status_text, True, text_color)
         text_x = self.rect.centerx - txt_surf.get_width() // 2
         surface.blit(txt_surf, (text_x, self.rect.y + 20))
 
-        # -----------------------------------------------------------
-        # CÁC PHẦN DƯỚI (CHAT BONG BÓNG, EMOJI...) GIỮ NGUYÊN
-        # -----------------------------------------------------------
-
-        # 3. Vẽ Lịch Sử Chat (Bong bóng)
+        # --- VẼ CHAT ---
         pygame.draw.rect(surface, (20, 20, 20), self.history_rect) 
         self.voice_play_buttons = []
-        
         y_cursor = self.history_rect.bottom - 10 
         
         for sender, msg in reversed(self.messages):
             if y_cursor < self.history_rect.y: break
-            
             is_me = (sender == "Bạn")
             content_surf = None
             content_type = "TEXT"
             extra_data = None
 
-            # Check Voice
-            if msg.startswith("[Voice:") and msg.endswith("s]"):
-                content_type = "VOICE"
-                duration_str = msg[7:-1]
-                content_surf = pygame.Surface((90, 24), pygame.SRCALPHA)
-                extra_data = duration_str
+            # [SỬA] Logic hiển thị Voice
+            if msg.startswith("[VOICE:"): 
+                # msg format: [VOICE:1.5:base64...]
+                # Cắt chuỗi để lấy thời gian, không hiển thị mã base64 loằng ngoằng
+                try:
+                    parts = msg.split(":")
+                    seconds = parts[1] # "1.5"
+                    content_type = "VOICE"
+                    content_surf = pygame.Surface((90, 24), pygame.SRCALPHA)
+                    extra_data = f"{seconds}s"
+                except:
+                    content_type = "TEXT"
+                    msg = "[Lỗi Voice Data]" # Nếu tin nhắn bị hỏng
 
-            # Check Emoji Ảnh
             elif msg.startswith("[emo") and msg.endswith("]"):
                 content_type = "EMOJI"
                 try:
@@ -264,14 +292,13 @@ class GameSidebar:
                         content_surf = self.emoji_images[idx]
                 except: pass
             
-            # Check Text thường
             if content_surf is None: 
                 content_type = "TEXT"
                 text_col = WHITE 
                 if sender == "System": text_col = (200, 200, 200)
                 content_surf = self.font.render(msg, True, text_col)
 
-            # Tính toán Bong bóng
+            # Bubble Calculation
             bubble_padding = 8
             bubble_w = content_surf.get_width() + bubble_padding * 2
             bubble_h = content_surf.get_height() + bubble_padding * 2
@@ -286,13 +313,9 @@ class GameSidebar:
 
             bubble_y = y_cursor - bubble_h
             if bubble_y < self.history_rect.y: break
-
             bubble_rect = pygame.Rect(bubble_x, bubble_y, bubble_w, bubble_h)
 
-            # Vẽ Bong bóng
             pygame.draw.rect(surface, bubble_color, bubble_rect, border_radius=12)
-            
-            # Vẽ Nội dung
             content_x = bubble_rect.x + bubble_padding
             content_y = bubble_rect.y + bubble_padding
 
@@ -300,8 +323,11 @@ class GameSidebar:
                 surface.blit(content_surf, (content_x, content_y))
             
             elif content_type == "VOICE":
+                # Nút Play
                 play_rect = pygame.Rect(content_x, content_y + 2, 50, 20)
+                # QUAN TRỌNG: Lưu toàn bộ tin nhắn gốc (msg) vào nút Play để tí nữa giải mã
                 self.voice_play_buttons.append((play_rect, msg))
+                
                 c_btn = (255, 255, 255)
                 pygame.draw.rect(surface, c_btn, play_rect, border_radius=10)
                 tri_col = bubble_color 
@@ -311,15 +337,14 @@ class GameSidebar:
 
             y_cursor -= (bubble_h + 5)
 
-        # 4. Vẽ Input
+        # Input
         color_input = (255, 255, 255) if self.input_active else (150, 150, 150)
         pygame.draw.rect(surface, (50, 50, 50), self.input_rect, border_radius=15)
         pygame.draw.rect(surface, color_input, self.input_rect, 2, border_radius=15)
         surface.blit(self.font.render(self.input_text, True, WHITE), (self.input_rect.x + 10, self.input_rect.y + 5))
 
-        # 5. Vẽ Nút Icon Emoji & Mic
+        # Icons
         mouse_pos = pygame.mouse.get_pos()
-        
         c_emo = (80, 80, 80) if self.btn_emoji.collidepoint(mouse_pos) or self.show_emoji_panel else (50, 50, 50)
         pygame.draw.rect(surface, c_emo, self.btn_emoji, border_radius=5)
         if hasattr(self, 'icon_btn_emoji'):
@@ -333,7 +358,6 @@ class GameSidebar:
         pygame.draw.line(surface, WHITE, (cx, cy+8), (cx, cy+12), 2)
         pygame.draw.line(surface, WHITE, (cx-6, cy+12), (cx+6, cy+12), 2)
 
-        # 6. Vẽ Bảng Emoji
         if self.show_emoji_panel:
             pygame.draw.rect(surface, (40, 40, 45), self.emoji_panel_rect, border_radius=5)
             pygame.draw.rect(surface, (100, 100, 100), self.emoji_panel_rect, 1, border_radius=5)
@@ -345,7 +369,8 @@ class GameSidebar:
                     img_rect = img.get_rect(center=rect.center)
                     surface.blit(img, img_rect)
 
-        # 7. Vẽ Nút Cầu Hòa / Đầu Hàng
+        # Buttons Draw/Resign & Popup (GIỮ NGUYÊN CODE CŨ)
+        # ... (Phần vẽ nút và popup bạn giữ nguyên như cũ nhé) ...
         c_draw = (100, 100, 100) if self.btn_draw.collidepoint(mouse_pos) else (70, 70, 70)
         pygame.draw.rect(surface, c_draw, self.btn_draw, border_radius=5)
         t_draw = self.font.render("Cầu Hòa", True, WHITE)
@@ -356,7 +381,6 @@ class GameSidebar:
         t_resign = self.font.render("Đầu Hàng", True, WHITE)
         surface.blit(t_resign, (self.btn_resign.centerx - t_resign.get_width()//2, self.btn_resign.centery - t_resign.get_height()//2))
 
-        # 8. Vẽ Popup
         if self.popup_type:
             overlay = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 200))
@@ -370,7 +394,6 @@ class GameSidebar:
             t1 = self.font.render(msg1, True, WHITE); t2 = self.font.render(msg2, True, WHITE)
             surface.blit(t1, (self.popup_rect.centerx - t1.get_width()//2, self.popup_rect.y + 15))
             surface.blit(t2, (self.popup_rect.centerx - t2.get_width()//2, self.popup_rect.y + 40))
-            
             c_yes = c_y if not self.btn_p_yes.collidepoint(mouse_pos) else (min(c_y[0]+50,255), min(c_y[1]+50,255), min(c_y[2]+50,255))
             pygame.draw.rect(surface, c_yes, self.btn_p_yes, border_radius=5)
             t_yes = self.font.render("Có", True, WHITE)
