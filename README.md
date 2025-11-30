@@ -1,6 +1,6 @@
 # Board Game P2P lai♟️
 
-🌟 Giới thiệu
+## 🌟 Giới thiệu
 
 Dự án này là một ứng dụng Desktop được xây dựng bằng Python và Pygame, cho phép hai người chơi kết nối và thi đấu trực tiếp với nhau. Điểm đặc biệt là cơ chế kết nối mạng:
 
@@ -8,7 +8,7 @@ Sử dụng một Server trung gian (Matchmaking Server) để giúp hai máy t�
 
 Sau khi kết nối, dữ liệu bàn cờ (nước đi, chat) sẽ được truyền trực tiếp (P2P) giữa hai máy, giảm độ trễ và giảm tải cho server.
 
-✨ Tính năng chính
+## ✨ Tính năng chính
 
 🎮 Hai loại cờ: Hỗ trợ đầy đủ luật chơi Cờ Vua (Chess) và Cờ Tướng (Xiangqi).
 
@@ -30,9 +30,8 @@ Sau khi kết nối, dữ liệu bàn cờ (nước đi, chat) sẽ được tru
 - `ui/`: Giao diện pygame
 - `games/`: Các loại game (cờ vua, cờ tướng)
 - `utils/`: Các hàm tiện ích và hằng số
-- `tests/`: Unit test
-.......................................
-🚀 Hướng dẫn cài đặt & Chạy
+
+## 🚀 Hướng dẫn cài đặt & Chạy
 
 1. Yêu cầu hệ thống
 
@@ -53,10 +52,10 @@ python -m venv venv
 
 # Kích hoạt môi trường ảo
 # Windows:
-
 venv\Scripts\activate
+
 # macOS/Linux:
-# source venv/bin/activate
+source venv/bin/activate
 
 # Cài đặt các thư viện
 pip install -r requirements.txt

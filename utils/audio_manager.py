@@ -4,16 +4,16 @@ import scipy.io.wavfile as wav
 import os
 import base64
 import pygame
+import time # [THÊM] Để đo thời gian thực
 
 class AudioManager:
     def __init__(self):
-        # [SỬA 1] Giảm chất lượng xuống để nhẹ mạng (8000Hz là chuẩn thoại điện thoại)
         self.sample_rate = 16000  
         self.channels = 1
         self.recording = None
         self.is_recording = False
+        self.start_time = 0 # [THÊM] Biến lưu thời điểm bắt đầu
         
-        # [SỬA 2] Khởi tạo Mixer của Pygame ngay khi tạo Manager
         try:
             pygame.mixer.init(frequency=self.sample_rate, size=-16, channels=1, buffer=512)
         except: pass
@@ -22,14 +22,10 @@ class AudioManager:
         if not os.path.exists(self.temp_dir):
             os.makedirs(self.temp_dir)
 
-        # [DEBUG] In ra danh sách thiết bị để xem máy đang dùng Mic nào
-        print("\n--- DANH SÁCH THIẾT BỊ ÂM THANH ---")
-        print(sd.query_devices())
-        print("-----------------------------------\n")
-
     def start_recording(self):
         self.is_recording = True
-        # Thu âm với định dạng float32 (mặc định)
+        self.start_time = time.time() # [THÊM] Bấm giờ
+        # Thu sẵn 10s (nhưng tí nữa sẽ cắt)
         self.recording = sd.rec(int(10 * self.sample_rate), samplerate=self.sample_rate, channels=self.channels)
 
     def stop_recording(self, filename="my_voice.wav"):
@@ -38,24 +34,38 @@ class AudioManager:
         self.is_recording = False
         sd.stop()
         
-        # Cắt bỏ phần thừa (lấy độ dài thực tế)
-        # Vì sd.rec chạy non-blocking, ta cần wait để đảm bảo dữ liệu về đủ
-        # Nhưng ở đây ta đã bấm nút Stop rồi nên sd.stop() đã xử lý.
+        # [QUAN TRỌNG: CẮT FILE]
+        # 1. Tính thời gian thực tế đã thu (VD: 0.6s)
+        elapsed_time = time.time() - self.start_time
         
-        # [SỬA 3] Kiểm tra xem có tiếng không (hay toàn im lặng)
-        volume_norm = np.linalg.norm(self.recording) * 10
-        print(f"DEBUG: Độ lớn âm thanh thu được: {int(volume_norm)}")
+        # 2. Tính số lượng mẫu (Samples) cần lấy
+        valid_samples = int(elapsed_time * self.sample_rate)
         
-        if volume_norm < 1:
-            print("⚠ CẢNH BÁO: Không thu được tiếng gì cả (Micro lỗi hoặc chưa chọn đúng)")
+        # 3. Cắt mảng dữ liệu (Chỉ lấy phần có tiếng, vứt phần 10s thừa đi)
+        # self.recording là mảng to, ta cắt lấy [0 : valid_samples]
+        actual_audio = self.recording[:valid_samples]
+        
+        # [XỬ LÝ LỖI NaN]
+        actual_audio = np.nan_to_num(actual_audio)
 
+        # [TÍNH NĂNG MỚI: TỰ ĐỘNG TĂNG ÂM LƯỢNG (NORMALIZE)]
+        # Nếu bạn hét mà volume chỉ 16 là quá bé. Code này sẽ kích âm lên to nhất có thể.
+        max_val = np.max(np.abs(actual_audio))
+        if max_val > 0:
+            # Khuếch đại sao cho đỉnh cao nhất chạm mốc 0.9 (gần max loa)
+            actual_audio = actual_audio / max_val * 0.9
+            print(f"DEBUG: Đã khuếch đại âm thanh (Gốc: {max_val:.4f})")
+        
+        # Chuyển sang INT16 để lưu file
+        audio_int16 = (actual_audio * 32767).astype(np.int16)
+        
         filepath = os.path.join(self.temp_dir, filename)
-        
-        # [QUAN TRỌNG] Chuyển đổi sang INT16 để Pygame phát được
-        # Dữ liệu gốc là float32 (-1.0 đến 1.0), nhân với 32767 để ra int16
-        audio_int16 = (self.recording * 32767).astype(np.int16)
-        
         wav.write(filepath, self.sample_rate, audio_int16)
+        
+        # In ra dung lượng file để kiểm tra (Nó phải nhỏ, tầm 20KB thôi)
+        file_size = os.path.getsize(filepath)
+        print(f"DEBUG: File ghi âm dài {elapsed_time:.1f}s - Kích thước: {file_size/1024:.1f} KB")
+        
         return filepath
 
     def audio_to_string(self, filepath):
@@ -77,9 +87,8 @@ class AudioManager:
     def play_sound(self, filepath):
         try:
             if os.path.exists(filepath):
-                # Load lại file và phát
                 sound = pygame.mixer.Sound(filepath)
-                sound.set_volume(1.0) # Max volume
+                sound.set_volume(1.0) 
                 sound.play()
                 print(f"Đang phát: {filepath}")
             else:
