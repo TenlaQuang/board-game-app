@@ -477,17 +477,6 @@
     "#card_title": {
         "font": {
             "name": "arial",
-            "size": "24",
-            "bold": "1",
-             "regular_path": "ui/assets/fonts/font_vi.ttf"
-        },
-        "colours": {
-            "normal_text": "#FFD700" 
-        }
-    },
-    "#card_title": {
-        "font": {
-            "name": "arial",
             "size": "26",
             "bold": "1",
             "regular_path": "ui/assets/fonts/font_vi.ttf"
@@ -533,7 +522,77 @@
             "regular_path": "ui/assets/fonts/font_vi.ttf",
             "bold_path": "ui/assets/fonts/font_vi.ttf"
         }
+    },
+    "#diff_window": {
+        "colours": {
+            "normal_bg": "#2C2F33",
+            "normal_border": "#8B4513", 
+            "title_bar_bg": "#3E2723",
+            "title_bar_text": "#FFD700"
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "corner_radius": "10",
+            "border_width": "3",
+            "shadow_width": "10"
+        }
+    },
+
+    "#diff_label": {
+        "colours": {
+            "normal_text": "#FFD700" 
+        },
+        "font": {
+            "name": "Arial",
+            "size": "24",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf",
+            "shadow": "1"
+        },
+        "misc": {
+            "text_horiz_alignment": "center"
+        }
+    },
+
+    "#diff_dropdown": {
+        "colours": {
+            "normal_bg": "#4E2A14",       
+            "hovered_bg": "#6D3B1D",
+            "active_bg": "#4E2A14",
+            "normal_border": "#2A1507",
+            "normal_text": "#FFFFFF",
+            "selected_bg": "#8B4513"
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "corner_radius": "5",
+            "border_width": "2",
+            "open_list_is_on_top_of_window": "1"
+        },
+        "font": {
+            "name": "Arial",
+            "size": "18",
+            "bold": "1",
+            "regular_path": "ui/assets/fonts/font_vi.ttf"
+        }
+    },
+
+    "#diff_dropdown.selection_list": {
+        "colours": {
+            "normal_bg": "#3E2723",        
+            "hovered_bg": "#5D4037",
+            "selected_bg": "#8D6E63",
+            "normal_text": "#FFFFFF",
+            "selected_text": "#FFD700",
+            "normal_border": "#FFFFFF"
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "corner_radius": "5",
+            "border_width": "1"
+        }
     }
+
 }
 
 

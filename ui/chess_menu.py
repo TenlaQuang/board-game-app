@@ -1,7 +1,7 @@
 # ui/chess_menu.py
 import pygame
 import pygame_gui
-from pygame_gui.elements import UIWindow, UILabel, UIDropDownMenu, UIButton
+from pygame_gui.elements import UIWindow, UILabel, UIDropDownMenu, UIButton, UIImage
 import os
 from utils.constants import WIDTH, HEIGHT
 
@@ -57,13 +57,13 @@ class ChessMenu:
 
     def show_difficulty_dialog(self):
         """Hàm tạo và hiển thị cửa sổ chọn độ khó"""
-        # Nếu cửa sổ đang mở rồi thì không mở nữa
-        if self.diff_window is not None:
+        if getattr(self, 'diff_window', None) is not None:
             return
 
         # 1. Tạo cửa sổ (Window)
-        window_rect = pygame.Rect(0, 0, 300, 220)
-        window_rect.center = (WIDTH // 2, HEIGHT // 2) # Căn giữa màn hình
+        # Tăng kích thước xíu cho thoáng (300x250)
+        window_rect = pygame.Rect(0, 0, 310, 280)
+        window_rect.center = (WIDTH // 2, HEIGHT // 2)
         
         self.diff_window = UIWindow(
             rect=window_rect,
@@ -72,32 +72,53 @@ class ChessMenu:
             object_id="#diff_window"
         )
 
-        # 2. Label "Chọn độ khó"
-        UILabel(
-            relative_rect=pygame.Rect((10, 20), (280, 30)),
-            text="Chọn mức độ:",
-            manager=self.ui_manager,
-            container=self.diff_window # Gắn vào cửa sổ
-        )
+        # --- [THÊM] HÌNH NỀN GỖ CHO CỬA SỔ ---
+        # Lấy ảnh bảng gỗ hoặc ảnh nền tối làm background cho window này
+        try:
+            # Bạn có thể dùng 'ui/assets/images/lobby_board.png' hoặc ảnh khác
+            bg_surf = pygame.image.load('ui/assets/images/bg_online_menu.png').convert_alpha()
+            # Cắt hoặc scale ảnh cho vừa cửa sổ
+            bg_surf = pygame.transform.smoothscale(bg_surf, (300, 250))
+        except:
+            bg_surf = pygame.Surface((300, 250))
+            bg_surf.fill((50, 40, 30)) # Màu nâu gỗ dự phòng
 
-        # 3. Dropdown chọn mức độ
-        self.diff_selector = UIDropDownMenu(
-            options_list=['EASY', 'MEDIUM', 'HARD'],
-            starting_option='MEDIUM',
-            relative_rect=pygame.Rect((50, 60), (200, 30)),
+        # Đặt ảnh nền nằm dưới cùng (layer thấp nhất trong window)
+        UIImage(
+            relative_rect=pygame.Rect(0, 0, 300, 250),
+            image_surface=bg_surf,
             manager=self.ui_manager,
             container=self.diff_window
         )
+        # -------------------------------------
 
-        # 4. Nút Bắt đầu (Nhỏ gọn nằm trong cửa sổ)
-        self.btn_confirm_start = UIButton(
-            relative_rect=pygame.Rect((50, 120), (200, 50)),
-            text="BẮT ĐẦU",
+        # 2. Label "Chọn độ khó" (Thêm ID #diff_label để chỉnh font to/màu vàng)
+        UILabel(
+            relative_rect=pygame.Rect((10, 30), (280, 40)),
+            text="CHỌN ĐỘ KHÓ",
             manager=self.ui_manager,
             container=self.diff_window,
-            object_id="#wood_btn_small" # Bạn có thể CSS thêm cho id này
+            object_id="#diff_label" 
         )
 
+        # 3. Dropdown chọn mức độ (Thêm ID #diff_dropdown)
+        self.diff_selector = UIDropDownMenu(
+            options_list=['EASY', 'MEDIUM', 'HARD'],
+            starting_option='MEDIUM',
+            relative_rect=pygame.Rect((50, 80), (200, 40)), # Cao hơn xíu cho dễ bấm
+            manager=self.ui_manager,
+            container=self.diff_window,
+            object_id="#diff_dropdown"
+        )
+
+        # 4. Nút Bắt đầu (Dùng style nút gỗ #wood_btn)
+        self.btn_confirm_start = UIButton(
+            relative_rect=pygame.Rect((50, 160), (200, 50)),
+            text="VÀO TRẬN",
+            manager=self.ui_manager,
+            container=self.diff_window,
+            object_id="#wood_btn" # Dùng lại style nút gỗ đẹp có sẵn
+        )
     def show(self):
         self.btn_pve.show()
         self.btn_pvp_online.show()
