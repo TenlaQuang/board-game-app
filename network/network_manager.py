@@ -115,19 +115,54 @@ class NetworkManager:
         self.p2p_listener_thread.start()
 
     def _listen_loop(self):
+        # Bộ đệm phải nằm ngoài vòng lặp while để tích trữ dữ liệu
+        buffer = ""
+        
+        print("[NET] Đang lắng nghe dữ liệu P2P...")
+        
         try:
             while self.p2p_socket:
                 try:
-                    data = self.p2p_socket.recv(40960).decode('utf-8')
-                    if not data: break
-                    for line in data.split("\n"):
-                        if line.strip():
-                            try: self.p2p_queue.put(json.loads(line))
-                            except: pass
-                except OSError: break
-                except: break
+                    # 1. Tăng lên 1MB (1024 * 1024) để nuốt trọn gói tin Voice
+                    chunk = self.p2p_socket.recv(1048576).decode('utf-8')
+                    
+                    if not chunk: 
+                        print("[NET] Đối thủ đã ngắt kết nối.")
+                        break
+                    
+                    # 2. [QUAN TRỌNG] Cộng dồn dữ liệu mới vào dữ liệu cũ
+                    buffer += chunk
+                    
+                    # 3. Xử lý tách tin nhắn (Dựa vào ký tự xuống dòng \n)
+                    # Chỉ xử lý khi tìm thấy dấu xuống dòng (tức là đã trọn vẹn 1 tin nhắn)
+                    while "\n" in buffer:
+                        # Tách: [Tin nhắn hoàn chỉnh] \n [Phần thừa còn lại...]
+                        message, buffer = buffer.split("\n", 1)
+                        
+                        if message.strip():
+                            try:
+                                data_json = json.loads(message)
+                                
+                                # Debug chơi cho vui để biết voice đã tới
+                                if data_json.get("type") == "chat" and "[VOICE" in data_json.get("content", ""):
+                                    print(f"[NET] >>> ĐÃ NHẬN VOICE! Kích thước: {len(message)} bytes")
+                                    
+                                self.p2p_queue.put(data_json)
+                            except json.JSONDecodeError:
+                                # Nếu JSON lỗi, có thể do chưa nhận đủ, kệ nó chờ vòng lặp sau
+                                print(f"[NET] Đang chờ gom đủ gói tin... (Buffer: {len(buffer)})")
+                                pass
+                                
+                except OSError:
+                    break 
+                except Exception as e:
+                    print(f"[NET] Lỗi nhận dữ liệu: {e}")
+                    break
+                    
+        except Exception as e:
+            print(f"[NET] Lỗi listener: {e}")
         finally: 
-            self._close_socket_only()
+            self.reset_connection()
 
     def send_to_p2p(self, data):
         if self.p2p_socket:
