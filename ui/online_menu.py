@@ -11,6 +11,72 @@ from pygame_gui.core import ObjectID
 from pygame_gui.elements import UIPanel
 from pygame_gui.elements import UIScrollingContainer
 from pygame_gui.elements import UIProgressBar
+
+# --- BẮT ĐẦU ĐOẠN CẦN THÊM ---
+class ParallaxLayer:
+    def __init__(self, image_path, speed_factor, screen_w, screen_h):
+        self.speed_factor = speed_factor
+        self.x = 0
+        self.bg_image = None
+        try:
+            # Tải ảnh và scale cho vừa màn hình
+            raw_img = pygame.image.load(image_path).convert_alpha()
+            self.bg_image = pygame.transform.scale(raw_img, (screen_w, screen_h))
+            self.width = screen_w
+        except Exception as e:
+            print(f"Lỗi tải ảnh nền {image_path}: {e}")
+
+    def update(self, time_delta):
+        # Tốc độ trôi (pixel/giây)
+        move_speed = 50 * self.speed_factor 
+        self.x -= move_speed * time_delta
+        # Reset khi hình trôi hết khỏi màn hình
+        if self.x <= -self.width:
+            self.x = 0
+
+    def draw(self, surface):
+        if self.bg_image:
+            # Vẽ 2 ảnh nối đuôi nhau để lặp vô tận
+            surface.blit(self.bg_image, (int(self.x), 0))
+            surface.blit(self.bg_image, (int(self.x) + self.width, 0))
+
+class ParallaxBackground:
+    def __init__(self, width, height):
+        self.layers = []
+        # Cấu hình: (Đường dẫn ảnh, Tốc độ trôi) - Tốc độ càng cao trôi càng nhanh
+        layer_configs = [
+            ('ui/assets/background/7.png', 0.0), 
+            
+            # Các lớp cây/rừng phía sau (Trôi chậm)
+            ('ui/assets/background/6.png', 0.1),
+            ('ui/assets/background/5.png', 0.2),
+            ('ui/assets/background/4.png', 0.3),
+            
+            # Các lớp cây tầm trung (Trôi vừa)
+            ('ui/assets/background/3.png', 0.4),
+            ('ui/assets/background/2.png', 0.5),
+            
+            # Các lớp đất/cỏ sát màn hình (Trôi nhanh tạo chiều sâu)
+            ('ui/assets/background/1.png', 0.6),
+            ('ui/assets/background/0.png', 0.8),          # Mây rất gần (gió thổi)
+        ]
+        
+        print("--- Đang tải nền Glacial Mountains ---")
+        for img_path, speed in layer_configs:
+            self.layers.append(ParallaxLayer(img_path, speed, width, height))
+
+    def update(self, time_delta):
+        for layer in self.layers:
+            layer.update(time_delta)
+
+    def draw(self, surface):
+        # Vẽ màu nền dự phòng nếu chưa tải được ảnh
+        if not self.layers:
+            surface.fill((20, 25, 40)) 
+            return
+        for layer in self.layers:
+            layer.draw(surface)
+# --- KẾT THÚC ĐOẠN CẦN THÊM ---
 class OnlineMenu:
     def __init__(self, screen, ui_manager, network_manager):
         self.screen = screen
@@ -42,7 +108,7 @@ class OnlineMenu:
         win_width, win_height = 800, 600
         self.rect = pygame.Rect(0, 0, win_width, win_height)
         self.rect.center = (WIDTH // 2, HEIGHT // 2)
-
+        self.parallax_bg = ParallaxBackground(WIDTH, HEIGHT)
         # [THÊM MỚI] --- Chuẩn bị cho Loading Screen ---
         self.loading_panel = None
         self.loading_angle = 0
@@ -57,7 +123,6 @@ class OnlineMenu:
         self.window = UIWindow(
             rect=self.rect,
             manager=ui_manager,
-            window_display_title="Sảnh Online (P2P)",
             object_id="#online_window"
         )
 
@@ -154,28 +219,58 @@ class OnlineMenu:
 
         # 8. Reset các biến trạng thái cờ
         self.pending_room_id = None
+    
     # ============================================================
     # [THÊM HÌNH NỀN] 2. HÀM TRỢ GIÚP THÊM NỀN VÀO CỬA SỔ
     # ============================================================
     def _add_common_background(self):
         """Thêm hình nền chung vào đáy của cửa sổ hiện tại."""
-        # Tạo UIImage phủ kín cửa sổ, đặt nó là phần tử đầu tiên để nó nằm dưới cùng.
-        x_pos = -15   # Số DƯƠNG (+) dịch sang PHẢI, số ÂM (-) dịch sang TRÁI
-        y_pos = -10   # Số DƯƠNG (+) dịch xuống DƯỚI, số ÂM (-) dịch lên TRÊN
+        x_pos = -15   
+        y_pos = -10  
     
-    # Ví dụ: x_pos = -50 (dịch trái 50px), y_pos = -20 (dịch lên 20px)
-
         bg_image = UIImage(
-        # Lưu ý: Thay self.rect.size bằng self.common_bg_surface.get_size() 
-        # để khung hình nhận đúng kích thước ảnh bạn đã chỉnh ở bước 1
         relative_rect=pygame.Rect((x_pos, y_pos), self.common_bg_surface.get_size()),
         image_surface=self.common_bg_surface,
         manager=self.ui_manager,
         container=self.window
         )
         self.ui_elements.append(bg_image)
-    # ============================================================
 
+    # ============================================================
+    # [THÊM MỚI] HÀM TẠO NÚT BACK (Sử dụng hình back_bg.png)
+    # ============================================================
+    def _create_back_btn(self, top_left, container):
+        """Tạo nút Back với hình ảnh back_bg.png (Nút EXIT)"""
+        w, h = 120, 50 # Kích thước nút
+        rect = pygame.Rect(top_left, (w, h))
+
+        try:
+            # Tải ảnh back_bg.png
+            img = pygame.image.load('ui/assets/images/back_bg.png').convert_alpha()
+            img = pygame.transform.smoothscale(img, (w, h))
+        except (FileNotFoundError, pygame.error):
+            # Fallback nếu không thấy ảnh
+            print("Không tìm thấy back_bg.png, dùng hình tạm.")
+            img = pygame.Surface((w, h))
+            img.fill((100, 50, 50))
+            pygame.draw.rect(img, (255, 255, 255), ((0,0), (w,h)), 2)
+
+        # 1. Vẽ hình nền nút
+        bg_img = UIImage(relative_rect=rect, image_surface=img, manager=self.ui_manager, container=container)
+        
+        # 2. Tạo nút trong suốt đè lên để bắt sự kiện click
+        # Dùng object_id="#transparent_btn" để ẩn background mặc định của button
+        btn = UIButton(
+            relative_rect=rect,
+            text="", 
+            manager=self.ui_manager,
+            container=container,
+            object_id=ObjectID(object_id="#transparent_btn") 
+        )
+        
+        # Thêm background vào list để xóa sau này, trả về btn để gán logic
+        self.ui_elements.append(bg_img)
+        return btn
 
     # ==========================================
     # 0. MÀN HÌNH ĐĂNG NHẬP
@@ -185,7 +280,6 @@ class OnlineMenu:
         self._add_common_background() # Lớp 1: Nền chung
         
         self.current_view = "LOGIN"
-        self.window.set_display_title("Đăng Nhập")
 
         # --- Lớp 2: Tấm bảng gỗ (Hình nền cho ô nhập liệu) ---
         try:
@@ -235,7 +329,6 @@ class OnlineMenu:
         self.entry_login_name.set_text(self.network_manager.username)
         
         # 3. Nút Kết Nối (Thay thế bằng hình ảnh)
-        # SỬA: Chỉ giữ lại đoạn này, XÓA đoạn tạo nút bằng text phía dưới đi
         self.btn_login_connect = UIButton(
             relative_rect=pygame.Rect((250, board_rect.bottom + 20), (300, 80)),
             text="Nhấp vào chơi nào", # Để trống chữ để hiện ảnh
@@ -245,9 +338,13 @@ class OnlineMenu:
             object_id=ObjectID(object_id='#enter_table_btn') 
         )
 
-        # Các nút/nhãn khác
-        self.btn_back_login = UIButton(pygame.Rect((20, 500), (100, 40)), "Quay lại", self.ui_manager, container=self.window)
-        self.lbl_login_status = UILabel(pygame.Rect((200, 360), (400, 30)), "", self.ui_manager, container=self.window)
+        # [SỬA] Thay nút Text cũ bằng nút hình ảnh
+        self.btn_back_login = self._create_back_btn(
+            (30, 480), 
+            self.window
+        )
+
+        self.lbl_login_status = UILabel(pygame.Rect((200, 500), (400, 30)), "", self.ui_manager, container=self.window)
 
         # --- Gom tất cả vào list quản lý (Chỉ gọi 1 lần) ---
         self.ui_elements.extend([
@@ -276,8 +373,6 @@ class OnlineMenu:
         # ====================================================
         # 2. [QUAN TRỌNG] MỞ LẠI CỔNG ĐỂ HIỆN TÊN TRÊN DANH SÁCH
         # ====================================================
-        # Nếu đã đăng nhập, ta phải mở cổng ngay (dù chưa tạo phòng) 
-        # để người khác thấy mình mà mời.
         if self.is_logged_in:
             print("[SYSTEM] Đang mở lại cổng chờ tin hiệu...")
             # Mở cổng lắng nghe (nhưng chưa vào trạng thái Host game)
@@ -345,21 +440,18 @@ class OnlineMenu:
         
         self.ui_elements.extend([self.btn_create_main, self.btn_join_main])
 
-        # --- C. NÚT ĐĂNG XUẤT ---
-        self.btn_logout = UIButton(
-            relative_rect=pygame.Rect((30, 480), (120, 40)), 
-            text="< Đăng xuất", 
-            manager=self.ui_manager, 
-            container=self.window,
-            object_id=ObjectID(object_id="#wood_btn")
+        # --- C. NÚT ĐĂNG XUẤT (Dùng hình ảnh Back) ---
+        self.btn_logout = self._create_back_btn(
+            (30, 480),
+            self.window
         )
         self.ui_elements.append(self.btn_logout)
+
     # ==========================================
     # 2. NHẬP ID
     # ==========================================
     def setup_join_view(self):
         self.clear_ui()
-        # [THÊM HÌNH NỀN] Gọi hàm thêm nền ngay sau khi clear
         self._add_common_background()
 
         self.current_view = "JOIN"
@@ -367,7 +459,7 @@ class OnlineMenu:
         
         if not hasattr(self, 'join_input_text'): self.join_input_text = ""
 
-        # --- 1. HÌNH NỀN KHUNG ĐEN (Cái này là nền của ô nhập liệu, nằm trên nền chung) ---
+        # --- 1. HÌNH NỀN KHUNG ĐEN ---
         input_rect = pygame.Rect((229, 17), (350, 90)) 
         try:
             bg_surf = pygame.image.load('ui/assets/images/id_input_bg.png').convert_alpha()
@@ -402,7 +494,12 @@ class OnlineMenu:
 
         # --- 4. NÚT VÀO BÀN & BACK ---
         self.btn_confirm_join = UIButton(relative_rect=pygame.Rect((250, 460), (300, 70)), text="VÀO BÀN", manager=self.ui_manager, container=self.window, object_id="#enter_table_btn")
-        self.btn_back_to_main = UIButton(pygame.Rect((20, 20), (80, 40)), "Back", self.ui_manager, container=self.window)
+        
+        # [SỬA] Thay nút Text cũ bằng nút hình ảnh
+        self.btn_back_to_main = self._create_back_btn(
+            (20, 20),
+            self.window
+        )
 
         self.ui_elements.extend([btn_0, btn_clear, btn_back_join, self.btn_confirm_join, self.btn_back_to_main])
         self.lbl_status = UILabel(pygame.Rect((200, 550), (400, 30)), "Nhập ID để vào...", self.ui_manager, container=self.window)
@@ -413,8 +510,6 @@ class OnlineMenu:
     # ==========================================
     def setup_lobby_view(self, room_id):
         self.clear_ui()
-        # [THÊM HÌNH NỀN] Gọi hàm thêm nền ngay sau khi clear.
-        # Lưu ý: Hình nền chung sẽ nằm DƯỚI hình 'lobby_board.png'
         self._add_common_background()
 
         self.current_view = "LOBBY"
@@ -432,7 +527,6 @@ class OnlineMenu:
         img_rect = pygame.Rect(0, 0, board_w, board_h)
         img_rect.center = ((win_w // 2) - 42, (win_h // 2) - 50) 
         
-        # Cái này là cái bảng gỗ nhỏ, nó sẽ nằm ĐÈ LÊN nền chung
         self.lobby_bg = UIImage(relative_rect=img_rect, image_surface=board_surf, manager=self.ui_manager, container=self.window)
         self.ui_elements.append(self.lobby_bg)
 
@@ -537,18 +631,14 @@ class OnlineMenu:
             object_id=ObjectID(object_id="#wood_btn") 
         )
         
-        # [SỬA LỖI VALUE ERROR TẠI ĐÂY]
-        # Thay vì container=self.btn_refresh (SAI), ta dùng container=self.invite_panel (ĐÚNG)
-        # Và tính lại toạ độ tương đối so với Panel
-        
         icon_x = btn_refresh_x + 5 # Cách lề trái nút 5px
         icon_y = btn_refresh_y + 5 # Cách lề trên nút 5px
         
-        icon_refresh = UIImage(
+        self.icon_refresh = UIImage(
             relative_rect=pygame.Rect((icon_x, icon_y), (30, 30)),
             image_surface=refresh_img,
             manager=self.ui_manager,
-            container=self.invite_panel # <--- SỬA THÀNH invite_panel
+            container=self.invite_panel 
         )
         
         # Vô hiệu hóa icon để click xuyên qua được (bấm vào icon vẫn ăn nút ở dưới)
@@ -1050,6 +1140,8 @@ class OnlineMenu:
         self.btn_retry.hide()
     # [THÊM MỚI] Hàm cập nhật hiệu ứng (Đặt trong OnlineMenu)
     def update(self, time_delta):
+        if hasattr(self, 'parallax_bg'):
+            self.parallax_bg.update(time_delta)
         # 1. Đang Loading
         if self.loading_state == "LOADING" and hasattr(self, 'bar_fill'):
             if self.current_fill_width < 225: 
@@ -1250,3 +1342,8 @@ class OnlineMenu:
         # 4. NÚT BẤM TRONG SUỐT (Đè lên trên cùng)
         btn = UIButton(relative_rect=rect, text="", manager=self.ui_manager, container=self.window, object_id=ObjectID(object_id=action_id))
         return btn
+    # [THÊM HÀM NÀY]
+    def draw_background(self, screen):
+        """Hàm vẽ nền núi tuyết, gọi từ main loop"""
+        if hasattr(self, 'parallax_bg'):
+            self.parallax_bg.draw(screen)
