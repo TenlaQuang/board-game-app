@@ -15,6 +15,9 @@ IMAGES_DIR = os.path.join(ASSETS_DIR, 'images')
 CHESS_PIECES_DIR = os.path.join(IMAGES_DIR, 'chess')
 XIANGQI_PIECES_DIR = os.path.join(IMAGES_DIR, 'xiangqi') 
 
+# [THÊM DÒNG NÀY] Thư mục Âm thanh (Quan trọng)
+SOUNDS_DIR = os.path.join(ASSETS_DIR, 'sounds')
+
 # --- [NEW] THƯ MỤC FONT (FIX LỖI IMPORT) ---
 FONTS_DIR = os.path.join(ASSETS_DIR, 'fonts')
 # -------------------------------------------

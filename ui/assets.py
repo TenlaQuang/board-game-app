@@ -15,6 +15,7 @@ CHESS_BUTTONS = {}
 XIANGQI_BUTTONS = {}
 MAIN_MENU_BACKGROUND = None
 XIANGQI_BOARD_IMG = None # <-- Đã có
+CHESS_BOARD_IMG = None
 
 # (Tôi sửa lại lỗi typo ở đây, Cờ Vua là 8 ô)
 DEFAULT_CHESS_PIECE_SIZE = WIDTH // 8 
@@ -41,21 +42,43 @@ def load_assets():
     print("Đang tải tài nguyên...")
     
     # <-- THÊM XIANGQI_BOARD_IMG VÀO GLOBAL
-    global MAIN_MENU_BACKGROUND, CHESS_PIECES, XIANGQI_PIECES, XIANGQI_BOARD_IMG
+    global MAIN_MENU_BACKGROUND, CHESS_PIECES, XIANGQI_PIECES, XIANGQI_BOARD_IMG, CHESS_BOARD_IMG
 
     # --- 1. Tải Quân Cờ ---
     
-    # ----- Tải hình ảnh Cờ Vua (ĐÃ SỬA) -----
+   # ----- Tải hình ảnh Cờ Vua (ĐÃ SỬA CHO BỘ ẢNH MỚI) -----
     print("Đang tải ảnh Cờ Vua...")
+    
+    # [THAY ĐỔI Ở ĐÂY] Cập nhật tên file tương ứng với bộ ảnh mới
+    # Logic cũ: 'P': 'white_pawn' -> File cũ: white_pawn.png
+    # Logic mới: 'P': 'chess-pawn-white' -> File mới: chess-pawn-white.png
+    
     chess_file_map = {
-        'P': 'white_pawn', 'R': 'white_rook', 'N': 'white_knight', 'B': 'white_bishop', 'Q': 'white_queen', 'K': 'white_king',
-        'p': 'black_pawn', 'r': 'black_rook', 'n': 'black_knight', 'b': 'black_bishop', 'q': 'black_queen', 'k': 'black_king'
+        # QUÂN TRẮNG (Chữ hoa)
+        'P': 'chess-pawn-white', 
+        'R': 'chess-rook-white', 
+        'N': 'chess-knight-white', 
+        'B': 'chess-bishop-white', 
+        'Q': 'chess-queen-white', 
+        'K': 'chess-king-white',
+        
+        # QUÂN ĐEN (Chữ thường)
+        'p': 'chess-pawn-black', 
+        'r': 'chess-rook-black', 
+        'n': 'chess-knight-black', 
+        'b': 'chess-bishop-black', 
+        'q': 'chess-queen-black', 
+        'k': 'chess-king-black'
     }
+    
+    # Đoạn vòng lặp dưới này GIỮ NGUYÊN KHÔNG ĐỔI
     for symbol, file_name in chess_file_map.items():
+        # Nó sẽ tự động nối đuôi .png vào -> 'chess-pawn-white.png'
         filepath = os.path.join(CHESS_PIECES_DIR, f'{file_name}.png')
         if os.path.exists(filepath):
             try:
                 image = pygame.image.load(filepath).convert_alpha()
+                # Scale về kích thước ô cờ (như cũ)
                 CHESS_PIECES[symbol] = pygame.transform.scale(image, (DEFAULT_CHESS_PIECE_SIZE, DEFAULT_CHESS_PIECE_SIZE))
             except pygame.error as e:
                 print(f"Không thể tải ảnh cờ vua {filepath}: {e}")
@@ -97,6 +120,21 @@ def load_assets():
     except Exception as e:
         print(f"LỖI: Không tải được 'xiangqi_board.png': {e}")
         print("Bàn cờ tướng sẽ dùng màu nền dự phòng.")
+        
+    # [THÊM ĐOẠN NÀY ĐỂ TẢI BÀN CỜ VUA]
+    try:
+        # Đường dẫn tới file chess_board.png
+        # Đảm bảo file nằm trong thư mục images được trỏ bởi IMAGES_DIR (hoặc ASSETS_DIR)
+        chess_path = os.path.join(IMAGES_DIR, 'chess_board.png') 
+        
+        if os.path.exists(chess_path):
+            CHESS_BOARD_IMG = pygame.image.load(chess_path).convert_alpha()
+            print("✅ Đã tải ảnh nền Cờ Vua (chess_board.png).")
+        else:
+            print(f"⚠️ Không tìm thấy file: {chess_path}")
+            
+    except Exception as e:
+        print(f"LỖI tải chess_board.png: {e}")
 
     # --- 4. Tải Ảnh Nút ---
     try:
