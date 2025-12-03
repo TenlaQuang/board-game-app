@@ -75,7 +75,7 @@ class App:
 
     def run(self):
         while self.running:
-            time_delta = self.clock.tick(FPS) / 1000.0
+            time_delta = self.clock.tick(150) / 1000.0
             events = pygame.event.get()
             
             for event in events:
@@ -102,17 +102,11 @@ class App:
                         _, difficulty = action 
                         self.chess_menu.hide()
                         self._start_game_session('chess', online=False, difficulty=difficulty) 
-                    # ----------------------
-                    # elif action == 'PLAY_OFFLINE':
-                    #     self.chess_menu.hide(); self._start_game_session('chess', online=False) 
                     elif action == 'PLAY_ONLINE':
                         self.chess_menu.hide(); 
                         if self.online_menu: 
-                            # 1. Cập nhật cho UI (để hiện đúng tiêu đề, đúng luật)
                             self.online_menu.current_game_type = 'chess'
                             self.online_menu.reset_ui_state()
-                            
-                            # [THÊM DÒNG NÀY] 2. Cập nhật cho NetworkManager (để báo Server biết mình ở đâu)
                             self.network_manager.current_lobby_state = 'chess' 
                             self.network_manager.force_update()
                             self.online_menu.show(); 
@@ -124,15 +118,11 @@ class App:
                         self.xiangqi_menu.hide(); self.main_menu.show(); self.state = 'MAIN_MENU'
                     elif action == 'PLAY_OFFLINE': 
                         self.xiangqi_menu.hide(); self._start_game_session('chinese_chess', online=False)
-                    
                     elif action == 'PLAY_ONLINE': 
                         self.xiangqi_menu.hide(); 
                         if self.online_menu: 
-                            # 1. Cập nhật cho UI
                             self.online_menu.current_game_type = 'chinese_chess'
                             self.online_menu.reset_ui_state()
-                            
-                            # [THÊM DÒNG NÀY] 2. Cập nhật cho NetworkManager (QUAN TRỌNG)
                             self.network_manager.current_lobby_state = 'chinese_chess'
                             self.network_manager.force_update()
                             self.online_menu.show(); 
@@ -150,7 +140,8 @@ class App:
                             if self.selected_game_type == 'chess': self.chess_menu.show(); self.state = 'CHESS_MENU'
                             else: self.xiangqi_menu.show(); self.state = 'XIANGQI_MENU'
                         
-                        if self.network_manager.p2p_socket:
+                        # Logic chuyển cảnh khi kết nối thành công (do thread xử lý xong)
+                        if self.online_menu.current_view == "SWITCH_TO_GAME":
                             print(f">>> VÀO GAME ONLINE ({self.selected_game_type}) <<<")
                             self.online_menu.hide()
                             self._start_game_session(self.selected_game_type, online=True)
@@ -168,14 +159,11 @@ class App:
             # --- VẼ GIAO DIỆN (DRAW) ---
             self.ui_manager.update(time_delta)
             
-            # [THÊM ĐOẠN NÀY VÀO ĐÂY] =====================================
-            # Gọi hàm update của OnlineMenu để tính toán góc xoay spinner
+            # [QUAN TRỌNG] Cập nhật hiệu ứng chuyển động cho Online Menu
             if self.online_menu:
                 self.online_menu.update(time_delta)
-            # =============================================================
             
             if self.state == 'MAIN_MENU':
-                # 1. Vẽ nền Main Menu
                 if self.main_background: 
                     self.screen.blit(self.main_background, (0, 0))
                 else: 
@@ -183,34 +171,30 @@ class App:
                 self.main_menu.draw_custom_effects() 
             
             elif self.state == 'CHESS_MENU':
-                # --- ĐOẠN ĐÃ SỬA ---
-                # CŨ: self.chess_bg.update(time_delta); self.chess_bg.draw(self.screen)
-                # MỚI: Gọi hàm draw của menu để vẽ ảnh tĩnh poster
                 self.chess_menu.draw()
 
             elif self.state == 'XIANGQI_MENU':
                 self.xiangqi_menu.draw()
             
+            # [SỬA ĐỔI TẠI ĐÂY] ==================================================
             elif self.state == 'ONLINE_MENU':
-                self.screen.fill((20, 25, 40))
+                # Thay vì fill màu, ta gọi hàm vẽ nền núi tuyết
+                if self.online_menu:
+                    self.online_menu.draw_background(self.screen)
+                else:
+                    self.screen.fill((20, 25, 40)) # Fallback nếu chưa load
+            # ====================================================================
             
             elif self.state == 'GAME_SCREEN' and self.game_screen:
-                # (Tùy chọn) Nếu bạn muốn nền động KHI CHƠI GAME, 
-                # bạn có thể bật dòng này lên trước khi vẽ game_screen:
-                # if self.selected_game_type == 'chess':
-                #     self.chess_bg.update(time_delta)
-                #     self.chess_bg.draw(self.screen)
-                
                 self.game_screen.update() 
                 self.game_screen.draw()
 
-            # Vẽ các thành phần UI khác (nút trong suốt, chữ,...) đè lên trên
+            # Vẽ UI đè lên trên cùng
             self.ui_manager.draw_ui(self.screen)
             pygame.display.flip()
 
         self.network_manager.shutdown()
         pygame.quit()
-
     # Thêm tham số difficulty=None vào hàm
     def _start_game_session(self, game_type, online=False, difficulty=None):
         pieces_img = CHESS_PIECES if game_type == 'chess' else XIANGQI_PIECES
