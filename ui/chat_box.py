@@ -17,6 +17,12 @@ class GameSidebar:
         self.rect = pygame.Rect(x, y, w, h)
         self.font = font
         
+        # --- TIMER VARIABLES ---
+        self.white_time = 600.0 # 10 minutes (seconds)
+        self.black_time = 600.0
+        self.last_time_update = time.time()
+        self.game_active = True # To stop timer when game ends
+        
         # --- AUDIO MANAGER ---
         self.audio_mgr = AudioManager() if AudioManager else None
         self.voice_cache = {} # Lưu đường dẫn file âm thanh: {msg_content: filepath}
@@ -26,6 +32,13 @@ class GameSidebar:
         self.input_text = ""
         self.input_active = False
         self.history_rect = pygame.Rect(x + 10, y + 80, w - 20, h - 220)
+        
+        # [ADJUSTED] Shift history down to make room for Timer
+        # Old y was y + 80. Now we need space for timer.
+        # Let's say Timer takes 60px.
+        self.timer_rect = pygame.Rect(x + 10, y + 50, w - 20, 50)
+        # History starts below timer
+        self.history_rect = pygame.Rect(x + 10, self.timer_rect.bottom + 10, w - 20, h - 280)
         
         # Input Area
         input_w = w - 90
@@ -91,6 +104,44 @@ class GameSidebar:
         pw = (self.popup_rect.width - 30) // 2; py = self.popup_rect.bottom - 40
         self.btn_p_yes = pygame.Rect(self.popup_rect.x + 10, py, pw, 30)
         self.btn_p_no = pygame.Rect(self.btn_p_yes.right + 10, py, pw, 30)
+    
+    # --- [NEW] UPDATE TIMER FUNCTION ---
+    def update_timers(self, game_logic):
+        """Cập nhật đồng hồ dựa trên lượt đi"""
+        
+        # [SỬA LẠI] Kiểm tra kết thúc game theo cách cũ của bạn (dựa vào winner)
+        # Nếu winner có giá trị (không phải None) -> Game đã xong -> Dừng đếm giờ
+        if game_logic.winner:
+            return
+
+        current_time = time.time()
+        dt = current_time - self.last_time_update
+        self.last_time_update = current_time
+
+        # Chặn lỗi tụt giờ khi mới vào game hoặc lag
+        if dt > 0.5:
+            return
+
+        if not game_logic.promotion_pending: 
+            if game_logic.current_turn == 'white':
+                self.white_time -= dt
+            else:
+                self.black_time -= dt
+
+        if self.white_time < 0: self.white_time = 0
+        if self.black_time < 0: self.black_time = 0
+        
+        # Kiểm tra hết giờ
+        # Khi hết giờ: Gán người thắng VÀ Khóa bàn cờ (game_over = True)
+        if self.white_time == 0 and not game_logic.winner:
+             game_logic.winner = 'black'      # Đen thắng
+             game_logic.game_over = True      # <--- THÊM DÒNG NÀY ĐỂ KHÓA BÀN CỜ
+             self.add_message("System", "Hết giờ! Đen thắng.")
+             
+        elif self.black_time == 0 and not game_logic.winner:
+             game_logic.winner = 'white'      # Trắng thắng
+             game_logic.game_over = True      # <--- THÊM DÒNG NÀY ĐỂ KHÓA BÀN CỜ
+             self.add_message("System", "Hết giờ! Trắng thắng.")
 
     def handle_event(self, e, network_manager=None):
         action = None
@@ -257,6 +308,46 @@ class GameSidebar:
         except: txt_surf = pygame.font.SysFont("Arial", 25, bold=True).render(status_text, True, text_color)
         text_x = self.rect.centerx - txt_surf.get_width() // 2
         surface.blit(txt_surf, (text_x, self.rect.y + 20))
+        
+        def format_t(s): return f"{int(s)//60:02}:{int(s)%60:02}"
+        w_str = format_t(self.white_time)
+        b_str = format_t(self.black_time)
+
+        # Box dimensions
+        box_w = (self.timer_rect.width - 10) // 2
+        box_h = 40
+        y_timer = self.timer_rect.y
+
+        # White Timer (Left)
+        rect_w = pygame.Rect(self.timer_rect.x, y_timer, box_w, box_h)
+        # Black Timer (Right)
+        rect_b = pygame.Rect(rect_w.right + 10, y_timer, box_w, box_h)
+
+        # Highlight active turn
+        col_w = (200, 200, 200)
+        col_b = (50, 50, 50)
+        border_w = (100, 100, 100)
+        border_b = (100, 100, 100)
+        width_w = 2
+        width_b = 2
+
+        if not game_logic.game_over:
+            if game_logic.current_turn == 'white':
+                col_w = (240, 240, 240); border_w = (0, 255, 0); width_w = 4
+            else:
+                col_b = (80, 80, 80); border_b = (0, 255, 0); width_b = 4
+
+        # Draw White
+        pygame.draw.rect(surface, col_w, rect_w, border_radius=8)
+        pygame.draw.rect(surface, border_w, rect_w, width_w, border_radius=8)
+        t_w = self.font.render(w_str, True, BLACK) # White player time in black text
+        surface.blit(t_w, (rect_w.centerx - t_w.get_width()//2, rect_w.centery - t_w.get_height()//2))
+
+        # Draw Black
+        pygame.draw.rect(surface, col_b, rect_b, border_radius=8)
+        pygame.draw.rect(surface, border_b, rect_b, width_b, border_radius=8)
+        t_b = self.font.render(b_str, True, WHITE) # Black player time in white text
+        surface.blit(t_b, (rect_b.centerx - t_b.get_width()//2, rect_b.centery - t_b.get_height()//2))
 
         # --- VẼ CHAT ---
         pygame.draw.rect(surface, (20, 20, 20), self.history_rect) 

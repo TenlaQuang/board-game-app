@@ -6,7 +6,8 @@ from core.board import Board
 from utils.constants import (
     WIDTH, HEIGHT,
     HIGHLIGHT_COLOR,
-    FONTS_DIR 
+    FONTS_DIR,
+    SOUNDS_DIR 
 )
 from .chat_box import GameSidebar 
 import pygame_gui
@@ -108,6 +109,38 @@ class BoardUI:
         if self.ai_engine:
             self.game_logic.set_player_color('white')
         
+        # [THÊM ĐOẠN NÀY] Tải ảnh nền chuyển động
+        self.scroll_bg_img = None
+        self.scroll_x = 0
+        self.scroll_y = 0
+        
+        try:
+            bg_path = os.path.join("ui", "assets", "background", "8.png")
+            if os.path.exists(bg_path):
+                img = pygame.image.load(bg_path).convert()
+                
+                # [THÊM ĐOẠN NÀY ĐỂ THU NHỎ BACKGROUND]
+                # Chỉnh số 0.5 thành số bạn muốn:
+                # 0.5 = Thu nhỏ còn một nửa (Họa tiết nhỏ lại, lặp nhiều hơn)
+                # 0.8 = Thu nhỏ còn 80%
+                # 1.0 = Giữ nguyên
+                BG_SCALE = 0.7 
+                
+                new_w = int(img.get_width() * BG_SCALE)
+                new_h = int(img.get_height() * BG_SCALE)
+                
+                self.scroll_bg_img = pygame.transform.smoothscale(img, (new_w, new_h))
+                
+                # Cập nhật lại kích thước để tính toán lặp
+                self.bg_w = self.scroll_bg_img.get_width()
+                self.bg_h = self.scroll_bg_img.get_height()
+                
+                print(f"✅ Đã tải và thu nhỏ background (Tỉ lệ {BG_SCALE})")
+            else:
+                print(f"⚠️ Không tìm thấy ảnh: {bg_path}")
+        except Exception as e:
+            print(f"Lỗi tải background: {e}")
+        
         self.board_rect = board_rect
         self.sidebar_rect = sidebar_rect
         
@@ -119,6 +152,14 @@ class BoardUI:
         
         self.promotion_window = None 
         self.pending_promotion_move = None 
+        
+        self.chess_board_img = None
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            img_path = os.path.join(current_dir, 'assets', 'images', 'chess_board.png')
+            if os.path.exists(img_path):
+                self.chess_board_img = pygame.image.load(img_path).convert_alpha()
+        except Exception: pass
         
         self.board_img = None
         try:
@@ -139,6 +180,29 @@ class BoardUI:
         self.selected_piece_pos = None
         self.possible_moves = []
         
+         
+        self.move_sound = None
+        
+        try:
+            # 1. Khởi động mixer nếu chưa bật
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+
+            # 2. Tạo đường dẫn chuẩn: assets/sounds/move.mp3
+            sound_path = os.path.join(SOUNDS_DIR, 'move.mp3')
+            print(f"   -> Đang tìm file: {sound_path}")
+            
+            # 3. Kiểm tra và tải
+            if os.path.exists(sound_path):
+                self.move_sound = pygame.mixer.Sound(sound_path)
+                self.move_sound.set_volume(0.7) # Chỉnh âm lượng vừa phải
+            else:
+                pass
+        except Exception as e:
+            print(f"   -> ❌ LỖI KHI TẢI: {e}")
+            
+        print("--- [DEBUG] KẾT THÚC TẢI ÂM THANH ---\n")
+        
         font_name = "Roboto-Regular.ttf"
         font_path = os.path.join(FONTS_DIR, font_name)
         def load_font(path, size, is_bold=False):
@@ -156,7 +220,7 @@ class BoardUI:
             self.sidebar = GameSidebar(self.sidebar_rect.x, self.sidebar_rect.y, self.sidebar_rect.width, self.sidebar_rect.height, self.chat_font)
         else:
             self.sidebar = None
-
+            
     def get_color_name(self, color_code):
         if self.game_logic.game_type == 'chess':
             return "TRẮNG" if color_code == 'white' else "ĐEN"
@@ -166,7 +230,7 @@ class BoardUI:
     def _get_board_params(self):
         available_w = self.board_rect.width
         available_h = self.board_rect.height
-        border_size = 30 if self.game_logic.game_type == 'chess' else 0
+        border_size = 60 if self.game_logic.game_type == 'chess' else 0
         safe_w = available_w - border_size * 2
         safe_h = available_h - border_size * 2
         cell_size = min(safe_w // self.cols, safe_h // self.rows)
@@ -175,7 +239,7 @@ class BoardUI:
         start_x = self.board_rect.x + (available_w - board_pixel_w) // 2
         start_y = self.board_rect.y + (available_h - board_pixel_h) // 2
         return cell_size, start_x, start_y, border_size
-
+    
     def to_screen_pos(self, logic_r, logic_c):
         if self.game_logic.my_color == 'black':
             return (self.rows - 1 - logic_r), (self.cols - 1 - logic_c)
@@ -306,6 +370,7 @@ class BoardUI:
                     move_success = self.game_logic.move_piece(from_pos, to_pos)
                     
                     if move_success:
+                        self._play_move_sound()
                         if self.network_manager:
                             move_data = {
                                 "type": "move", "from": from_pos, "to": to_pos, 
@@ -349,6 +414,7 @@ class BoardUI:
             success = self.game_logic.move_piece(from_pos, to_pos, promotion=new_symbol)
 
             if success and self.network_manager:
+                self._play_move_sound()
                 move_data = {
                     "type": "move", "from": from_pos, "to": to_pos, 
                     "promotion": new_symbol,
@@ -376,6 +442,25 @@ class BoardUI:
     def update(self):
         self.ui_manager.update(0.016)
         
+        # [THÊM ĐOẠN NÀY] Cập nhật vị trí nền
+        # [SỬA ĐOẠN NÀY]
+        if self.scroll_bg_img:
+            # Tốc độ: Muốn nhanh hơn thì tăng số này lên (vd: 1.0 hoặc 2.0)
+            speed_x = 0.5 
+            speed_y = 0   # Để bằng 0 để nó KHÔNG chạy dọc
+            
+            self.scroll_x -= speed_x # Trừ đi là chạy sang trái
+            self.scroll_y -= speed_y
+            
+            # Reset vòng lặp
+            if self.scroll_x <= -self.bg_w: self.scroll_x = 0
+            if self.scroll_y <= -self.bg_h: self.scroll_y = 0
+        
+        # Để đồng hồ chạy, ta phải "lên dây cót" cho nó mỗi khung hình
+        if self.sidebar:
+            self.sidebar.update_timers(self.game_logic)
+        # -------------------------------------------------------
+        
         if self.game_logic.game_type == 'chess' and \
            self.game_logic.promotion_pending and \
            not self.promotion_window and \
@@ -400,6 +485,7 @@ class BoardUI:
                         from_pos = tuple(msg["from"]); to_pos = tuple(msg["to"])
                         promo_symbol = msg.get("promotion")
                         self.game_logic.move_piece(from_pos, to_pos, promotion=promo_symbol)
+                        self._play_move_sound()
                     # [THÊM ĐOẠN NÀY] Xử lý khi đối thủ thoát
                     elif msg.get('type') == 'quit':
                         self.show_opponent_quit_dialog()
@@ -434,9 +520,33 @@ class BoardUI:
                     self.game_logic.game_over = True
 
     def draw(self):
-        bg_color = XIANGQI_BG_COLOR if self.game_logic.game_type != 'chess' else (48, 46, 43) 
-        pygame.draw.rect(self.screen, bg_color, self.board_rect)
+        # 1. VẼ BACKGROUND VŨ TRỤ (CHẠY TỪ PHẢI QUA TRÁI)
+        if self.scroll_bg_img:
+            # Tính toán số lượng ảnh cần vẽ để phủ kín màn hình
+            cols = (WIDTH // self.bg_w) + 2
+            rows = (HEIGHT // self.bg_h) + 2
+            
+            for r in range(rows):
+                for c in range(cols):
+                    x = c * self.bg_w + self.scroll_x
+                    y = r * self.bg_h + self.scroll_y
+                    self.screen.blit(self.scroll_bg_img, (x, y))
+            
+            # Lớp phủ tối cho Cờ Vua (để quân cờ nổi bật hơn)
+            if self.game_logic.game_type == 'chess':
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 50)) # Đen mờ
+                self.screen.blit(overlay, (0, 0))
 
+        else:
+            self.screen.fill((30, 30, 35))
+
+        # 2. [SỬA] XỬ LÝ RIÊNG CHO CỜ TƯỚNG (MÀU GỖ)
+        # Nếu không phải cờ vua -> Vẽ màu gỗ đè lên toàn bộ màn hình
+        if self.game_logic.game_type != 'chess':
+            # XIANGQI_BG_COLOR là màu (210, 160, 100) bạn đã khai báo ở đầu file
+            self.screen.fill(XIANGQI_BG_COLOR)
+            
         if self.sidebar:
             turn_display_text = ""
             current_turn_vn = self.get_color_name(self.game_logic.current_turn)
@@ -455,9 +565,16 @@ class BoardUI:
 
         cell_size, start_x, start_y, border_size = self._get_board_params()
         self.draw_board_squares(cell_size, start_x, start_y, border_size)
-        self.draw_highlight_king_in_check(cell_size, start_x, start_y)
-        self.draw_pieces(cell_size, start_x, start_y)
-        self.draw_highlights(cell_size, start_x, start_y)
+        # self.draw_highlight_king_in_check(cell_size, start_x, start_y)
+        # self.draw_highlights(cell_size, start_x, start_y)
+        # self.draw_pieces(cell_size, start_x, start_y)
+        if self.game_logic.game_type == 'chess':
+            self.draw_highlights(cell_size, start_x, start_y)
+            self.draw_highlight_king_in_check(cell_size, start_x, start_y)
+            self.draw_pieces(cell_size, start_x, start_y)
+        else:
+            self.draw_pieces(cell_size, start_x, start_y)
+            self.draw_highlights(cell_size, start_x, start_y)
         # [SỬA LẠI ĐOẠN CUỐI NÀY] =================================================
         if self.game_logic.game_over:
             # Chỉ vẽ thông báo thắng/thua to đùng nếu KHÔNG CÓ bảng "Đối phương thoát"
@@ -486,22 +603,45 @@ class BoardUI:
         self.screen.blit(sub_text_surf, sub_text_rect)
     
     def draw_board_squares(self, cell_size, start_x, start_y, border_size):
+        # ---------------------------------------------------------
+        # TRƯỜNG HỢP 1: CỜ VUA (CHESS)
+        # ---------------------------------------------------------
+       # --- CỜ VUA (CHESS) ---
         if self.game_logic.game_type == 'chess':
-            if border_size > 0:
-                pygame.draw.rect(self.screen, (0, 0, 0), (start_x - border_size, start_y - border_size, cell_size * 8 + border_size*2, cell_size * 8 + border_size*2))
-                pygame.draw.rect(self.screen, (100, 100, 100), (start_x - 2, start_y - 2, cell_size * 8 + 4, cell_size * 8 + 4), 2)
-                files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']; ranks = ['8', '7', '6', '5', '4', '3', '2', '1']
-                if self.game_logic.my_color == 'black': files = files[::-1]; ranks = ranks[::-1]
-                for i in range(8):
-                    self.screen.blit(self.coord_font.render(ranks[i], True, CHESS_LIGHT_COLOR), (start_x - border_size + 8, start_y + i*cell_size + 8))
-                    self.screen.blit(self.coord_font.render(files[i], True, CHESS_LIGHT_COLOR), (start_x + i*cell_size + cell_size - 15, start_y + 8*cell_size + 4))
-            for r in range(self.rows):
-                for c in range(self.cols):
-                    color = CHESS_LIGHT_COLOR if (r + c) % 2 == 0 else CHESS_DARK_COLOR
-                    pygame.draw.rect(self.screen, color, (start_x + c * cell_size, start_y + r * cell_size, cell_size, cell_size))
+            # Nếu đã tải được ảnh bàn cờ
+            if getattr(self, 'chess_board_img', None):
+                # Tính kích thước lưới 8x8
+                grid_width = cell_size * 8
+                grid_height = cell_size * 8
+                
+                # Cấu hình viền (Padding). Số 0.53 là tỉ lệ viền so với ô cờ.
+                # Nếu ảnh bị lệch, hãy chỉnh số này (vd: 0.5, 0.55...)
+                padding = int(cell_size * 0.082) 
+                
+                total_w = grid_width + padding * 2
+                total_h = grid_height + padding * 2
+                
+                # Scale và vẽ ảnh
+                scaled_bg = pygame.transform.smoothscale(self.chess_board_img, (total_w, total_h))
+                self.screen.blit(scaled_bg, (start_x - padding, start_y - padding))
+
+            # Nếu không có ảnh -> Vẽ ô màu (Code cũ)
+            else:
+                if border_size > 0:
+                    pygame.draw.rect(self.screen, (0, 0, 0), (start_x - border_size, start_y - border_size, cell_size * 8 + border_size*2, cell_size * 8 + border_size*2))
+                    pygame.draw.rect(self.screen, (100, 100, 100), (start_x - 2, start_y - 2, cell_size * 8 + 4, cell_size * 8 + 4), 2)
+                
+                for r in range(self.rows):
+                    for c in range(self.cols):
+                        color = CHESS_LIGHT_COLOR if (r + c) % 2 == 0 else CHESS_DARK_COLOR
+                        pygame.draw.rect(self.screen, color, (start_x + c * cell_size, start_y + r * cell_size, cell_size, cell_size))
+        # ---------------------------------------------------------
+        # TRƯỜNG HỢP 2: CỜ TƯỚNG (XIANGQI)
+        # ---------------------------------------------------------
         else: 
             if self.board_img:
-                board_w = cell_size * self.cols; board_h = cell_size * self.rows
+                board_w = cell_size * self.cols
+                board_h = cell_size * self.rows
                 scaled_bg = pygame.transform.smoothscale(self.board_img, (board_w, board_h))
                 self.screen.blit(scaled_bg, (start_x, start_y), special_flags=pygame.BLEND_MULT)
             else:
@@ -530,32 +670,108 @@ class BoardUI:
     def draw_pieces(self, cell_size, start_x, start_y):
         board_state = self.game_logic.get_board_state()
         piece_radius = int(cell_size // 2 * 0.85); piece_thickness = 6 
-        for logic_r in range(self.rows):
+        
+        # 1. CẤU HÌNH CHUNG
+        SCALE_WIDTH = 1.7          # Độ to quân cờ
+        GLOBAL_Y_OFFSET = int(cell_size * 0.45) # Độ lệch chung cho tất cả
+        
+        # 2. [MỚI] BẢNG TINH CHỈNH RIÊNG CHO TỪNG QUÂN (PIECE TWEAKS)
+        # Ký tự: K(Vua), Q(Hậu), R(Xe), B(Tượng), N(Mã), P(Tốt)
+        # Giá trị: Số pixel dịch chuyển (Âm = Lên cao, Dương = Xuống thấp)
+        # Bạn chỉnh số ở đây để quân Vua cao lên hoặc thấp xuống cho đều với Hậu
+        piece_y_corrections = {
+            'K': -int(cell_size * 0.14), # Vua: Dịch lên 5% ô (Thử chỉnh số này!)
+            'k': -int(cell_size * 0.14), 
+            
+            'Q': int(cell_size * 0.005), 
+            'Q': int(cell_size * 0.005),              # Hậu: 
+            
+            'P': int(cell_size * 0.075),  # Tốt: Dịch xuống xíu cho sát đất
+            'p': int(cell_size * 0.075),
+            
+            'N': int(cell_size * 0.035),
+            'N': int(cell_size * 0.035),
+            
+            'B': -int(cell_size * 0.05),
+            'B': -int(cell_size * 0.05),
+            # Các quân khác (Xe, Mã, Tượng) mặc định là 0
+        }
+        # 2. [MỚI] BẢNG TINH CHỈNH TRÁI/PHẢI (X)
+        # Âm = Sang Trái, Dương = Sang Phải
+        piece_x_corrections = {
+            # Ví dụ: Hậu (q/Q) sang trái 2-3 pixel
+            'q': -5, 
+            
+            # Nếu quân nào khác bị lệch thì thêm vào đây
+            # 'K': 2, (Vua sang phải 2px)
+        }
+
+        # Xác định thứ tự vẽ (Hàng trên vẽ trước)
+        iter_rows = range(self.rows)
+        if self.game_logic.my_color == 'black':
+             iter_rows = range(self.rows - 1, -1, -1)
+
+        for logic_r in iter_rows:
             for logic_c in range(self.cols):
-                symbol, _ = get_piece_info(board_state[logic_r][logic_c])
+                piece = board_state[logic_r][logic_c]
+                symbol, color = get_piece_info(piece)
                 
                 if symbol:
                     screen_r, screen_c = self.to_screen_pos(logic_r, logic_c)
-                    center_x = start_x + screen_c * cell_size + cell_size // 2
-                    center_y = start_y + screen_r * cell_size + cell_size // 2
+                    cx = start_x + screen_c * cell_size + cell_size // 2
+                    cy = start_y + screen_r * cell_size + cell_size // 2
+                    
                     if self.game_logic.game_type == 'chess':
                         image = self.piece_assets.get(symbol)
                         if image:
-                            main_size = int(cell_size * 0.75); outline_size = main_size + 6 
-                            outline_img = pygame.transform.smoothscale(image, (outline_size, outline_size)); outline_img.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGB_MULT)
-                            main_img = pygame.transform.smoothscale(image, (main_size, main_size))
-                            self.screen.blit(outline_img, outline_img.get_rect(center=(center_x, center_y)))
-                            self.screen.blit(main_img, main_img.get_rect(center=(center_x, center_y)))
+                            # --- Tính toán độ lệch riêng ---
+                            # Lấy giá trị chỉnh sửa từ bảng trên, nếu không có thì bằng 0
+                            extra_y = piece_y_corrections.get(symbol.upper(), 0)
+                            extra_x = piece_x_corrections.get(symbol, 0)
+                            
+                            # --- Vẽ Bóng ---
+                            shadow_w = int(cell_size * 0.6)
+                            shadow_h = int(cell_size * 0.25)
+                            shadow_surf = pygame.Surface((shadow_w, shadow_h), pygame.SRCALPHA)
+                            pygame.draw.ellipse(shadow_surf, (0, 0, 0, 70), (0, 0, shadow_w, shadow_h))
+                            
+                            # Bóng cũng phải dịch theo quân cờ cho khớp
+                            # (Hoặc bạn có thể giữ bóng cố định nếu muốn chân quân cờ bay lên)
+                            # Ở đây mình giữ bóng cố định tại tâm ô để làm chuẩn đất.
+                            shadow_rect = shadow_surf.get_rect(center=(cx, cy + int(cell_size * 0.115)))
+                            self.screen.blit(shadow_surf, shadow_rect)
+
+                            # --- Vẽ Quân ---
+                            orig_w, orig_h = image.get_size()
+                            target_w = int(cell_size * SCALE_WIDTH)
+                            target_h = int(target_w * (orig_h / orig_w))
+                            scaled_img = pygame.transform.smoothscale(image, (target_w, target_h))
+                            
+                            piece_rect = scaled_img.get_rect()
+                            
+                            # [ÁP DỤNG TINH CHỈNH]
+                            # Vị trí = Tâm ô + Lệch chung + Lệch riêng (extra_y)
+                            # [ÁP DỤNG CẢ X VÀ Y]
+                            final_x = cx + extra_x # Cộng thêm độ lệch X
+                            final_y = cy + GLOBAL_Y_OFFSET + extra_y
+                            
+                            piece_rect.midbottom = (final_x, final_y)
+                            self.screen.blit(scaled_img, piece_rect)
+                        else:
+                            pygame.draw.circle(self.screen, (255, 0, 0), (cx, cy), 15)
+                            
+                    # =========================================================
+                    # LOGIC VẼ CỜ TƯỚNG (GIỮ NGUYÊN STYLE TRÒN CŨ)
+                    # =========================================================
                     else:
-                        pygame.draw.circle(self.screen, (0, 0, 0, 60), (center_x + 2, center_y + piece_thickness + 3), piece_radius)
-                        for i in range(piece_thickness): pygame.draw.circle(self.screen, PIECE_BODY_COLOR, (center_x, center_y + piece_thickness - i), piece_radius)
-                        pygame.draw.circle(self.screen, PIECE_FACE_COLOR, (center_x, center_y), piece_radius)
+                        pygame.draw.circle(self.screen, (0, 0, 0, 60), (cx + 2, cy + piece_thickness + 3), piece_radius)
+                        for i in range(piece_thickness): pygame.draw.circle(self.screen, PIECE_BODY_COLOR, (cx, cy + piece_thickness - i), piece_radius)
+                        pygame.draw.circle(self.screen, PIECE_FACE_COLOR, (cx, cy), piece_radius)
                         image = self.piece_assets.get(symbol)
                         if image:
                             piece_scale = int(cell_size * 0.85); scaled_img = pygame.transform.smoothscale(image, (piece_scale, piece_scale))
-                            self.screen.blit(scaled_img, scaled_img.get_rect(center=(center_x, center_y)))
-                        else: self.screen.blit(self.fallback_font.render(symbol, True, (255,0,0)), (center_x - 10, center_y - 15))
-
+                            self.screen.blit(scaled_img, scaled_img.get_rect(center=(cx, cy)))
+                        else: self.screen.blit(self.fallback_font.render(symbol, True, (255,0,0)), (cx -10, cy -15))
     def draw_highlights(self, cell_size, start_x, start_y):
         if self.possible_moves:
             for logic_r, logic_c in self.possible_moves:
@@ -627,6 +843,7 @@ class BoardUI:
                     
                     # Đi trực tiếp (vì đã có tọa độ rồi)
                     self.game_logic.move_piece(start, end)
+                    self._play_move_sound()
             
             else:
                 # =================================================
@@ -647,6 +864,7 @@ class BoardUI:
                     if start and end:
                         # 4. Đi quân
                         self.game_logic.move_piece(start, end, promotion=promo)
+                        self._play_move_sound()
 
         except Exception as e:
             print(f"❌ Lỗi AI: {e}")
@@ -677,3 +895,9 @@ class BoardUI:
         # Căn giữa màn hình
         self.quit_dialog.rect.center = (WIDTH // 2, HEIGHT // 2)
         self.quit_dialog.rebuild()
+    
+    def _play_move_sound(self):
+        # Kiểm tra xem biến có tồn tại và có dữ liệu không
+        if hasattr(self, 'move_sound') and self.move_sound:
+            try: self.move_sound.play()
+            except: pass
