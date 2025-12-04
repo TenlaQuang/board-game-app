@@ -669,6 +669,7 @@ class OnlineMenu:
             self.setup_lobby_view(self.host_room_id)
             self.current_view = "LOBBY"
 
+
         # Logic sự kiện UI
         if event.type == pygame_gui.UI_SELECTION_LIST_NEW_SELECTION:
             if hasattr(self, 'user_list') and event.ui_element == self.user_list:

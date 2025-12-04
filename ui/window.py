@@ -140,8 +140,7 @@ class App:
                             if self.selected_game_type == 'chess': self.chess_menu.show(); self.state = 'CHESS_MENU'
                             else: self.xiangqi_menu.show(); self.state = 'XIANGQI_MENU'
                         
-                        # Logic chuyển cảnh khi kết nối thành công (do thread xử lý xong)
-                        if self.online_menu.current_view == "SWITCH_TO_GAME":
+                        if self.network_manager.p2p_socket:
                             print(f">>> VÀO GAME ONLINE ({self.selected_game_type}) <<<")
                             self.online_menu.hide()
                             self._start_game_session(self.selected_game_type, online=True)
