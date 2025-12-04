@@ -284,3 +284,10 @@ class NetworkManager:
             invite = web_matchmaking.check_invite_online(self.username)
             if self._poll_callback: self._poll_callback(users, invite)
         except: pass
+
+    def shutdown(self):
+        self._polling = False
+        self.reset_connection()
+        try: 
+            if self._listen_socket: self._listen_socket.close()
+        except: pass
